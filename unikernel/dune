@@ -1,0 +1,49 @@
+(executable
+ (name main)
+ (modules main carton_mkernel immuable)
+ (link_flags :standard -cclib "-z solo5-abi=hvt")
+ (libraries
+  mkernel
+  carton
+  carton.cartonnage
+  mnet
+  art
+  encore
+  mhttp
+  mirage-crypto-rng-mkernel
+  re
+  gmp
+  cachet
+  vifu
+  cmdliner
+  immuable.tree
+  logs.fmt
+  logs.cli
+  fmt.cli)
+ (foreign_stubs
+  (language c)
+  (names manifest)))
+
+(rule
+ (targets manifest.c)
+ (enabled_if
+  (= %{context_name} "default"))
+ (action
+  (write-file manifest.c "")))
+
+(rule
+ (targets manifest.c)
+ (deps manifest.json)
+ (enabled_if
+  (= %{context_name} "solo5"))
+ (action
+  (run solo5-elftool gen-manifest manifest.json manifest.c)))
+
+(rule
+ (targets manifest.json)
+ (enabled_if
+  (= %{context_name} "solo5"))
+ (action
+  (with-stdout-to
+   manifest.json
+   (run %{exe:main.exe} --ipv4=0.0.0.0/24))))

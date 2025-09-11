@@ -1,0 +1,5 @@
+(executable
+ (name immuable)
+ (enabled_if
+  (= %{context_name} "default"))
+ (libraries cmdliner digestif carton-miou-unix bos immuable.tree fmt.tty fmt.cli logs.cli logs.fmt logs.threaded))

@@ -1,0 +1,16 @@
+(vendored_dirs
+ bstr.0.0.2
+ h1.1.1.0
+ httpcats.0.1.0
+ digestif.1.3.0
+ mirage-crypto-rng-mkernel.dev
+ mkernel.dev
+ mnet.dev
+ mhttp.dev
+ vifu.dev
+ tls.2.0.2
+ kdf.1.0.0
+ x509.1.0.6
+ gmp.6.3.0
+ carton.1.1.0
+ art.0.2.0)
