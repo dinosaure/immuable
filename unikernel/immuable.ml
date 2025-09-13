@@ -28,7 +28,7 @@ let load pack uid =
 
 let get_root_and_metadata ~cfg pack commit =
   let str = Carton.Value.string (load pack (Cartonnage.Entry.uid commit)) in
-  let ref_length = cfg.Carton_mkernel.ref_length in
+  let ref_length = cfg.Pate.ref_length in
   let predicate = String.length str >= 2 * ref_length in
   let* () = guard predicate invalid_immuable_commit in
   let root = String.sub str 0 ref_length in
@@ -39,7 +39,7 @@ let get_root_and_metadata ~cfg pack commit =
 
 let rec walk ~cfg pack entries (current, node) =
   let str = Carton.Value.string (load pack node) in
-  let ref_length = cfg.Carton_mkernel.ref_length in
+  let ref_length = cfg.Pate.ref_length in
   let* tree = Tree.of_string ~ref_length str in
   let go acc elt =
     match (acc, elt) with
@@ -73,7 +73,7 @@ let fs ~cfg entries =
 
 let of_block ~cfg ~digest ~name =
   let v blk () =
-    let entries = Carton_mkernel.entries_of_pack ~cfg ~digest blk in
+    let entries = Pate.entries_of_pack ~cfg ~digest blk in
     match fs ~cfg entries with
     | Ok t -> t
     | Error err ->

@@ -8,15 +8,16 @@ type error =
   | `Not_found ]
 
 val fs :
-     cfg:Carton_mkernel.config
+     cfg:Pate.config
   -> (Mkernel.Block.t Carton.t * 'a) Cartonnage.Entry.t array
   -> (t, [> error ]) result
 
 val find : t -> string -> (Bstr.t, [> error ]) result
 val etag : t -> string -> (string, [> error ]) result
+val if_match : t -> ('c, 'v) Vifu.Request.t -> string -> bool
 
 val of_block :
-     cfg:Carton_mkernel.config
+     cfg:Pate.config
   -> digest:Carton.First_pass.digest
   -> name:string
   -> t Mkernel.arg

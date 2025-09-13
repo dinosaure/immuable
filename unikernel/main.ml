@@ -1,27 +1,33 @@
 module RNG = Mirage_crypto_rng.Fortuna
 module Immuable = Immuable
 
-let index req _server _ =
+let index fs req _server _user's_value =
   let open Vifu.Response.Syntax in
-  let* () =
-    Vifu.Response.add ~field:"content-type" "text/plain; charset=utf-8"
-  in
-  let* () = Vifu.Response.with_string req "Hello World!" in
-  Vifu.Response.respond `OK
-
-let routes =
-  let open Vifu.Route in
-  let open Vifu.Uri in
-  [ get (rel /?? any) --> index ]
+  match Immuable.find fs "/index.html" with
+  | Ok _ when Immuable.if_match fs req "/index.html" ->
+      let* () = Vifu.Response.with_string req "" in
+      Vifu.Response.respond `Not_modified
+  | Ok bstr ->
+      let str = Bstr.to_string bstr in
+      let etag = Result.get_ok (Immuable.etag fs "/index.html") in
+      let field = "etag" in
+      let* () = Vifu.Response.add ~field (etag :> string) in
+      let* () = Vifu.Response.with_string req str in
+      Vifu.Response.respond `OK
+  | Error _ ->
+      let str = Fmt.str "/index.html not found" in
+      let* () = Vifu.Response.with_string req str in
+      Vifu.Response.respond `Not_found
 
 let run _ (cfg, digest) cidr gateway port =
-  Mkernel.(
-    run
-      [
-        Mnet.stackv4 ~name:"service" ?gateway cidr
-      ; Immuable.of_block ~cfg ~digest ~name:"immuable"
-      ])
-  @@ fun (daemon, tcpv4, _udpv4) fs () ->
+  let devices =
+    let open Mkernel in
+    [
+      Mnet.stackv4 ~name:"service" ?gateway cidr
+    ; Immuable.of_block ~cfg ~digest ~name:"immuable"
+    ]
+  in
+  Mkernel.run devices @@ fun (daemon, tcpv4, _udpv4) fs () ->
   let rng = Mirage_crypto_rng_mkernel.initialize (module RNG) in
   let finally () =
     Mirage_crypto_rng_mkernel.kill rng;
@@ -30,6 +36,11 @@ let run _ (cfg, digest) cidr gateway port =
   Fun.protect ~finally @@ fun () ->
   let cfg = Vifu.Config.v port in
   let handlers = [ Immuable.handler fs ] in
+  let routes =
+    let open Vifu.Route in
+    let open Vifu.Uri in
+    [ get (rel /?? any) --> index fs ]
+  in
   Vifu.run ~cfg ~handlers tcpv4 routes ()
 
 open Cmdliner
@@ -204,7 +215,7 @@ let setup_carton_config hash cachesize digest =
     let module Hash = (val Digestif.module_of_hash' (hash :> Digestif.hash')) in
     Hash.digest_size
   in
-  let cfg = Carton_mkernel.config ~cachesize ~ref_length identify in
+  let cfg = Pate.config ~cachesize ~ref_length identify in
   (cfg, digest)
 
 let setup_carton_config =

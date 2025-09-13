@@ -1,6 +1,6 @@
 (executable
  (name main)
- (modules main carton_mkernel immuable)
+ (modules main pate immuable)
  (link_flags :standard -cclib "-z solo5-abi=hvt")
  (libraries
   mkernel
