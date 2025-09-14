@@ -1,7 +1,7 @@
 let error_msgf fmt = Fmt.kstr (fun msg -> Error (`Msg msg)) fmt
 let () = Logs_threaded.enable ()
 
-let uid_and_length_of_filename ?tbl alg filename =
+let entry_of_filename ?tbl alg filename =
   assert (Fpath.is_dir_path filename = false);
   let module Hash = (val Digestif.module_of_hash' (alg :> Digestif.hash')) in
   let stat = Unix.stat (Fpath.to_string filename) in
@@ -22,7 +22,8 @@ let uid_and_length_of_filename ?tbl alg filename =
       let uid = go ctx in
       let len = stat.Unix.st_size in
       Option.iter (fun tbl -> Hashtbl.add tbl uid (`File (filename, len))) tbl;
-      (uid, stat.Unix.st_size)
+      let length = stat.Unix.st_size in
+      Cartonnage.Entry.make ~kind:`C ~length uid ()
   | Unix.S_DIR -> assert false
   | Unix.S_CHR | S_BLK | S_FIFO | S_SOCK ->
       Fmt.failwith "Impossible to save %a" Fpath.pp filename
@@ -30,7 +31,7 @@ let uid_and_length_of_filename ?tbl alg filename =
 
 module Tree = Immuable_tree
 
-let uid_and_length_of_tree ?tbl alg tree =
+let entry_of_tree ?tbl alg tree =
   let module Hash = (val Digestif.module_of_hash' (alg :> Digestif.hash')) in
   let ref_length = Hash.digest_size in
   let str = Tree.to_string ~ref_length tree in
@@ -40,9 +41,9 @@ let uid_and_length_of_tree ?tbl alg tree =
   let ctx = Hash.feed_string ctx str in
   let uid = Hash.get ctx |> Hash.to_raw_string |> Carton.Uid.unsafe_of_string in
   Option.iter (fun tbl -> Hashtbl.add tbl uid (`Tree str)) tbl;
-  (uid, String.length str)
+  Cartonnage.Entry.make ~kind:`B ~length:(String.length str) uid ()
 
-let uid_and_length_of_commit ?tbl alg ~(root : Carton.Uid.t)
+let entry_of_commit ?tbl alg ~(root : Carton.Uid.t)
     ~(metadata : Carton.Uid.t) =
   let module Hash = (val Digestif.module_of_hash' (alg :> Digestif.hash')) in
   let str = Fmt.str "%s%s" (root :> string) (metadata :> string) in
@@ -52,7 +53,41 @@ let uid_and_length_of_commit ?tbl alg ~(root : Carton.Uid.t)
   let ctx = Hash.feed_string ctx str in
   let uid = Hash.get ctx |> Hash.to_raw_string |> Carton.Uid.unsafe_of_string in
   Option.iter (fun tbl -> Hashtbl.add tbl uid (`Commit str)) tbl;
-  (uid, String.length str)
+  Cartonnage.Entry.make ~kind:`A ~length:(String.length str) uid ()
+
+let walk_on_files alg (rtbl, tbl) path entries =
+  let entry = entry_of_filename ?tbl alg path in
+  Logs.debug (fun m -> m "[+] %a" Fpath.pp path);
+  Hashtbl.add rtbl path (Cartonnage.Entry.uid entry);
+  entry :: entries
+
+let rec walk_on_directories alg (rtbl, tbl) path entries =
+  let lst = Bos.OS.Dir.contents ~rel:true path in
+  let lst = Result.value ~default:[] lst in
+  let lst = List.sort Fpath.compare lst in
+  let ( let* ) = Option.bind in
+  let fn0 rel =
+    let abs = Fpath.(path // rel) in
+    let stat = Unix.stat (Fpath.to_string abs) in
+    let* perm = match stat.Unix.st_kind with
+      | Unix.S_REG when stat.Unix.st_perm = 0o755 -> Some `Exec
+      | Unix.S_REG when stat.Unix.st_perm = 0o664 -> Some `Everybody
+      | Unix.S_REG -> Some `Normal
+      | Unix.S_DIR -> Some `Dir
+      | Unix.S_LNK -> Some `Link
+      | _ -> None in
+    Logs.debug (fun m -> m "search %a" Fpath.pp abs);
+    let* node = Hashtbl.find_opt rtbl abs in
+    Some { Tree.perm; name= Fpath.basename rel; node } in
+  let fn1 = walk_on_directories alg (rtbl, tbl) in
+  let abss = List.map (fun rel -> Fpath.(path // rel)) lst in
+  let entries = Bos.OS.Path.fold ~traverse:`None ~elements:`Dirs fn1 entries abss in
+  let entries = Result.value ~default:[] entries in
+  let tree = List.filter_map fn0 lst in
+  let entry = entry_of_tree ?tbl alg tree in
+  Logs.debug (fun m -> m "[+] %a" Fpath.pp path);
+  Hashtbl.add rtbl path (Cartonnage.Entry.uid entry);
+  entry :: entries
 
 let null alg =
   let module Hash = (val Digestif.module_of_hash' (alg :> Digestif.hash')) in
@@ -82,15 +117,14 @@ let signature alg =
 
 let pack_of_filename alg filename =
   let tbl = Hashtbl.create 10 in
-  let node, length = uid_and_length_of_filename ~tbl alg filename in
-  let entrie2 = Cartonnage.Entry.make ~kind:`C ~length node () in
+  let entry2 = entry_of_filename ~tbl alg filename in
+  let node = Cartonnage.Entry.uid entry2 in
   let tree = [ { Tree.perm= `Normal; name= Fpath.filename filename; node } ] in
-  let root, length = uid_and_length_of_tree ~tbl alg tree in
-  let entrie1 = Cartonnage.Entry.make ~kind:`B ~length root () in
+  let entry1 = entry_of_tree ~tbl alg tree in
   let metadata = null alg in
-  let commit, length = uid_and_length_of_commit ~tbl alg ~root ~metadata in
-  let entrie0 = Cartonnage.Entry.make ~kind:`A ~length commit () in
-  let entries = [ entrie0; entrie1; entrie2 ] in
+  let root = Cartonnage.Entry.uid entry1 in
+  let entry0 = entry_of_commit ~tbl alg ~root ~metadata in
+  let entries = [ entry0; entry1; entry2 ] in
   let targets = List.map Cartonnage.Target.make entries in
   let targets = List.to_seq targets in
   let with_header = 3 in
@@ -101,31 +135,56 @@ let pack_of_filename alg filename =
     | `Tree str -> Carton.Value.of_string ~kind:`B str
     | `File (filename, len) -> value_of_filename ~len filename
   in
-  let total =
-    let fn _ elt acc =
-      match elt with
-      | `Commit str | `Tree str -> acc + String.length str + acc
-      | `File (_, len) -> acc + len
-    in
-    Hashtbl.fold fn tbl 0
-  in
-  let seq =
-    Carton_miou_unix.to_pack ~with_header ~with_signature ~load targets
-  in
-  (total, seq)
+  Carton_miou_unix.to_pack ~with_header ~with_signature ~load targets
+  |> Result.ok
+
+let pack_of_directory alg root =
+  let tbl = Hashtbl.create 0x100
+  and rtbl = Hashtbl.create 0x100 in
+  let ( let* ) = Result.bind in
+  let fn0 = walk_on_files alg (rtbl, Some tbl) in
+  let* entries = Bos.OS.Path.fold ~elements:`Files fn0 [] [ root ] in
+  let fn1 = walk_on_directories alg (rtbl, Some tbl) in
+  let* entries = Bos.OS.Path.fold ~elements:`Dirs ~traverse:`None fn1 entries [ root ] in
+  let root = Hashtbl.find_opt rtbl root in
+  let* root = Option.to_result ~none:`Root_not_found root in
+  let metadata = null alg in
+  let entry0 = entry_of_commit ~tbl alg ~root ~metadata in
+  let entries = entry0 :: entries in
+  let load uid () =
+    match Hashtbl.find tbl uid with
+    | `Commit str -> Carton.Value.of_string ~kind:`A str
+    | `Tree str -> Carton.Value.of_string ~kind:`B str
+    | `File (filename, len) -> value_of_filename ~len filename in
+  let with_header = List.length entries in
+  let entries = List.to_seq entries in
+  let module Hash = (val Digestif.module_of_hash' (alg :> Digestif.hash')) in
+  let ref_length = Hash.digest_size in
+  let targets = Carton_miou_unix.delta ~ref_length ~load entries in
+  let with_signature = signature alg in
+  Carton_miou_unix.to_pack ~with_header ~with_signature ~load targets
+  |> Result.ok
 
 let run _ alg root _pagesize output =
-  if Fpath.is_dir_path root then assert false;
-  let _total, seq = pack_of_filename alg root in
+  let ( let* ) = Result.bind in
+  let* seq =
+    if Fpath.is_dir_path root
+    then pack_of_directory alg root
+    else pack_of_filename alg root in
   let oc = open_out (Fpath.to_string output) in
   let finally () = close_out oc in
   Fun.protect ~finally @@ fun () ->
-  let size = ref 0 in
-  let write str =
-    output_string oc str;
-    size := String.length str + !size
-  in
-  Seq.iter write seq
+  Seq.iter (output_string oc) seq;
+  Ok ()
+
+let pp_error ppf = function
+  | `Root_not_found -> Fmt.string ppf "Root not found"
+  | `Msg msg -> Fmt.string ppf msg
+
+let run quiet alg root pagesize output =
+  Miou_unix.run @@ fun () ->
+  run quiet alg root pagesize output
+  |> Result.map_error (Fmt.str "%a." pp_error)
 
 open Cmdliner
 
@@ -247,4 +306,4 @@ let cmd =
   let info = Cmd.info "immuable" in
   Cmd.v info term
 
-let () = Cmd.(exit @@ eval cmd)
+let () = Cmd.(exit @@ eval_result cmd)

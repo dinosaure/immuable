@@ -1,3 +1,7 @@
+let src = Logs.Src.create "immuable.tree"
+
+module Log = (val Logs.src_log src : Logs.LOG)
+
 type perm = [ `Normal | `Everybody | `Exec | `Link | `Dir | `Commit ]
 
 let string_of_perm = function
@@ -13,7 +17,7 @@ let perm_of_string = function
   | "100664" -> `Everybody
   | "100755" -> `Exec
   | "120000" -> `Link
-  | "40000" | "040000" -> `Dir
+  | "400000" | "040000" -> `Dir
   | "160000" -> `Commit
   | v -> Fmt.invalid_arg "perm_of_string: %S" v
 
@@ -27,7 +31,7 @@ let perm =
   Encore.Bij.v ~fwd ~bwd
 
 let hash =
-  let fwd = safe_exn Carton.Uid.unsafe_of_string in
+  let fwd str = Carton.Uid.unsafe_of_string str in
   let bwd (v : Carton.Uid.t) = (v :> string) in
   Encore.Bij.v ~fwd ~bwd
 
@@ -52,7 +56,9 @@ let entry ~ref_length =
       <*> (hash <* commit)
       <* commit)
 
-let fmt ~ref_length = Encore.Syntax.rep0 (entry ~ref_length)
+let fmt ~ref_length =
+  let entry = entry ~ref_length in
+  Encore.Syntax.rep0 entry 
 
 let of_string ~ref_length str =
   let e = fmt ~ref_length in
@@ -60,7 +66,11 @@ let of_string ~ref_length str =
   let consume = Angstrom.Consume.All in
   match Angstrom.parse_string ~consume a str with
   | Ok tree -> Ok tree
-  | Error _ -> Error `Invalid_tree
+  | Error err ->
+      Log.err (fun m -> m "Invalid tree (ref_length: %d): %s" ref_length err);
+      Log.err (fun m -> m "@[<hov>%a@]"
+        (Hxd_string.pp Hxd.default) str);
+      Error `Invalid_tree
 
 let to_string ~ref_length tree =
   let e = fmt ~ref_length in

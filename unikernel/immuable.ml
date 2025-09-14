@@ -1,3 +1,7 @@
+let src = Logs.Src.create "immuable"
+
+module Log = (val Logs.src_log src : Logs.LOG)
+
 let ( let* ) = Result.bind
 let guard predicate fn = if predicate then Ok () else Error (fn ())
 let invalid_immuable_image () = `Invalid_immuable_image
@@ -50,13 +54,14 @@ let rec walk ~cfg pack entries (current, node) =
         walk ~cfg pack entries (current, node)
     | Ok entries, { name; node; _ } ->
         let current = Fpath.add_seg current name in
+        Log.debug (fun m -> m "[+] %a" Fpath.pp current);
         Ok ((current, node) :: entries)
   in
   List.fold_left go (Ok entries) tree
 
 let walk ~cfg pack root = walk ~cfg pack [] (Fpath.v "/", root)
 
-type t = { tree: Carton.Uid.t Art.t; pack: Mkernel.Block.t Carton.t }
+type t = { tree: (Fpath.t, Carton.Uid.t) Hashtbl.t; pack : Mkernel.Block.t Carton.t }
 
 let fs ~cfg entries =
   let* () = guard (Array.length entries >= 3) invalid_immuable_image in
@@ -66,8 +71,10 @@ let fs ~cfg entries =
   let pack, _ = Cartonnage.Entry.meta commit in
   let* root, _metadata = get_root_and_metadata ~cfg pack commit in
   let* files = walk ~cfg pack root in
-  let tree = Art.make () in
-  let fn (path, uid) = Art.insert tree (Art.key (Fpath.to_string path)) uid in
+  let tree = Hashtbl.create 0x100 in
+  let fn (path, uid) =
+    Log.debug (fun m -> m "[+] %a" Fpath.pp path);
+    Hashtbl.add tree path uid in
   List.iter fn files;
   Ok { tree; pack }
 
@@ -83,20 +90,20 @@ let of_block ~cfg ~digest ~name =
 
 let find t path =
   try
-    let uid = Art.find t.tree (Art.key path) in
+    let uid = Hashtbl.find t.tree (Fpath.v path) in
     let value = load t.pack uid in
     let bstr = Carton.Value.bigstring value in
     Ok (Bstr.sub bstr ~off:0 ~len:(Carton.Value.length value))
   with _ -> Error `Not_found
 
 let etag t path =
-  try Ok (Art.find t.tree (Art.key path) :> string) with _ -> Error `Not_found
+  try Ok (Hashtbl.find t.tree (Fpath.v path) :> string) with _ -> Error `Not_found
 
 let if_match t req target =
   let hdrs = Vifu.Request.headers req in
   let hash = Result.get_ok (etag t target) in
   match Vifu.Headers.get hdrs "if-none-match" with
-  | Some hash' -> String.equal hash (hash' :> string)
+  | Some hash' -> String.equal (hash :> string) (hash' :> string)
   | None -> false
 
 let handler t =

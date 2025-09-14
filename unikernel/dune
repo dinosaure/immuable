@@ -8,6 +8,8 @@
   carton.cartonnage
   mnet
   art
+  hxd.core
+  hxd.string
   encore
   mhttp
   mirage-crypto-rng-mkernel

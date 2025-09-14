@@ -271,10 +271,12 @@ let compile ?(on = ignorem) ~identify ~digest_length seq =
 type delta = { source: Carton.Uid.t; depth: int; raw: Cachet.Bstr.t }
 
 let seq_of_blk blk =
-  let buf = Bstr.create (Mkernel.Block.pagesize blk) in
+  let pagesize = Mkernel.Block.pagesize blk in
+  let buf = Bstr.create pagesize in
   let src_off = ref 0 in
   let rec go () =
     Mkernel.Block.read blk ~src_off:!src_off buf;
+    src_off := !src_off + pagesize;
     Seq.Cons (Bstr.to_string buf, go)
   in
   go

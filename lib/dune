@@ -1,4 +1,4 @@
 (library
  (name immuable_tree)
  (public_name immuable.tree)
- (libraries carton encore))
+ (libraries logs hxd.core hxd.string carton encore))
