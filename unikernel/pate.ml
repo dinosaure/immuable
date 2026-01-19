@@ -215,12 +215,11 @@ let compile ?(on = ignorem) ~identify ~digest_length seq =
                   offset Carton.Uid.pp ptr
                   (source :> int)
                   (target :> int));
-            begin
-              match Hashtbl.find_opt index ptr with
-              | Some parent ->
-                  update_size ~parent offset (Carton.Size.max source target)
-              | None ->
-                  Hashtbl.add sizes offset (ref (Carton.Size.max source target))
+            begin match Hashtbl.find_opt index ptr with
+            | Some parent ->
+                update_size ~parent offset (Carton.Size.max source target)
+            | None ->
+                Hashtbl.add sizes offset (ref (Carton.Size.max source target))
             end;
             Hashtbl.add ref_index offset ptr;
             new_child ~parent:(`Ref ptr) offset
@@ -292,7 +291,7 @@ let entries_of_pack ~cfg ~digest blk =
     in
     let pagesize = Mkernel.Block.pagesize blk in
     let z = Bstr.create De.io_buffer_size in
-    let allocate bits = De.make_window ~bits in
+    let allocate _ = De.make_window ~bits:15 in
     let index uid =
       Fmt.failwith "Impossible to find the object %a" Carton.Uid.pp uid
     in

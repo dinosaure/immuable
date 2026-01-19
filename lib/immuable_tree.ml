@@ -58,7 +58,7 @@ let entry ~ref_length =
 
 let fmt ~ref_length =
   let entry = entry ~ref_length in
-  Encore.Syntax.rep0 entry 
+  Encore.Syntax.rep0 entry
 
 let of_string ~ref_length str =
   let e = fmt ~ref_length in
@@ -68,8 +68,7 @@ let of_string ~ref_length str =
   | Ok tree -> Ok tree
   | Error err ->
       Log.err (fun m -> m "Invalid tree (ref_length: %d): %s" ref_length err);
-      Log.err (fun m -> m "@[<hov>%a@]"
-        (Hxd_string.pp Hxd.default) str);
+      Log.err (fun m -> m "@[<hov>%a@]" (Hxd_string.pp Hxd.default) str);
       Error `Invalid_tree
 
 let to_string ~ref_length tree =

@@ -10,7 +10,7 @@ let index fs req _server _user's_value =
   | Ok bstr ->
       let str = Bstr.to_string bstr in
       let etag = Result.get_ok (Immuable.etag fs "/index.html") in
-      let field = "etag" in
+      let field = "ETag" in
       let* () = Vifu.Response.add ~field (etag :> string) in
       let* () = Vifu.Response.with_string req str in
       Vifu.Response.respond `OK
@@ -18,6 +18,9 @@ let index fs req _server _user's_value =
       let str = Fmt.str "/index.html not found" in
       let* () = Vifu.Response.with_string req str in
       Vifu.Response.respond `Not_found
+
+let _1s = 1_000_000_000
+let rec gc () = Gc.compact (); Mkernel.sleep _1s; gc ()
 
 let run _ (cfg, digest) cidr gateway port =
   let devices =
@@ -29,9 +32,11 @@ let run _ (cfg, digest) cidr gateway port =
   in
   Mkernel.run devices @@ fun (daemon, tcpv4, _udpv4) fs () ->
   let rng = Mirage_crypto_rng_mkernel.initialize (module RNG) in
+  let gc = Miou.async gc in
   let finally () =
     Mirage_crypto_rng_mkernel.kill rng;
-    Mnet.kill daemon
+    Mnet.kill daemon;
+    Miou.cancel gc
   in
   Fun.protect ~finally @@ fun () ->
   let cfg = Vifu.Config.v port in

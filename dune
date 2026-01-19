@@ -1,16 +1,1 @@
-(vendored_dirs
- bstr
- h1
- httpcats
- digestif
- mirage-crypto-rng-mkernel
- mkernel
- mnet
- mhttp
- vifu
- tls
- kdf
- x509
- gmp
- carton
- art)
+(vendored_dirs vendors)
