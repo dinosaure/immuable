@@ -1,37 +1,34 @@
 opam-version: "2.0"
 maintainer: "Robur <team@robur.coop>"
 authors: ["Robur <team@robur.coop>"]
-homepage: "https://github.com/robur-coop/vif"
-dev-repo: "git+https://github.com/robur-coop/vif.git"
-bug-reports: "https://github.com/robur-coop/vif/issues"
+homepage: "https://github.com/robur-coop/immuable"
+dev-repo: "git+https://github.com/robur-coop/immuable.git"
+bug-reports: "https://github.com/robur-coop/immuable/issues"
 license: "MIT"
 
 depends: [
   "ocaml" {>= "5.3.0"}
   "dune" {>= "3.0.0"}
   "vif" {= version}
-  "mhttp"
   "mirage-crypto-rng-mkernel"
   "vifu"
+  "progress"
+  "flux"
+  "carton"
+  "art"
 ]
-conflicts: [ "result" {< "1.5"} ]
 build: [
-  ["dune" "subst"] {dev}
-  ["dune" "build" "-p" name "-j" jobs]
+  ["make" "all"]
 ]
-run-test: [
-  [ "dune" "runtest" "-p" name "-j1" ] {arch != "s390x"}
-]
-synopsis: "A simple web framework for OCaml 5"
-x-ci-accept-failures: ["debian-11"]
+synopsis: "An unikernel which serve HTTP contents"
 pin-depends: [
-  [ "mkernel.dev" "git+https://git.robur.coop/robur/mkernel.git#81a20185f638854ae07e64bbc1a5400bf6588776" ]
-  [ "utcp.dev" "git+https://github.com/dinosaure/utcp.git#50d0f3a0b42e8ffd3e4b15131dcf2a61b87ef96b" ]
-  [ "mnet.dev" "git+https://git.robur.coop/robur/mnet.git#26214790b53df78c00eafc48594cfa01290de0df" ]
-  [ "httpcats.dev" "git+https://github.com/robur-coop/httpcats.git#56ad42dd5667c1699240c609fd0e193f88bba1fb" ]
+  [ "mkernel.dev"                     "git+https://git.robur.coop/robur/mkernel.git#81a20185f638854ae07e64bbc1a5400bf6588776" ]
+  [ "utcp.dev"                        "git+https://github.com/dinosaure/utcp.git#50d0f3a0b42e8ffd3e4b15131dcf2a61b87ef96b" ]
+  [ "mnet.dev"                        "git+https://git.robur.coop/robur/mnet.git#26214790b53df78c00eafc48594cfa01290de0df" ]
+  [ "httpcats.dev"                    "git+https://github.com/robur-coop/httpcats.git#56ad42dd5667c1699240c609fd0e193f88bba1fb" ]
   [ "mirage-crypto-rng-mkernel.2.0.2" "git+https://github.com/dinosaure/mirage-crypto.git#820db4c1d19acd06dca82ce5615904848a852951" ]
-  [ "mhttp.dev" "git+https://github.com/dinosaure/mhttp.git#0638dd4620757c0a8062afaa75d1546ae206a604" ]
-  [ "flux.dev" "git+https://github.com/robur-coop/flux.git#7c4d8733596fd54f2f865c32747ba0eebdb964da" ]
-  [ "vif.dev" "git+https://github.com/robur-coop/vif.git#07708ae4bc3963935046cccb065527750f83f360" ]
-  [ "vifu.dev" "git+https://github.com/robur-coop/vif.git#07708ae4bc3963935046cccb065527750f83f360" ]
+  [ "mhttp.dev"                       "git+https://github.com/dinosaure/mhttp.git#0638dd4620757c0a8062afaa75d1546ae206a604" ]
+  [ "flux.dev"                        "git+https://github.com/robur-coop/flux.git#7c4d8733596fd54f2f865c32747ba0eebdb964da" ]
+  [ "vif.dev"                         "git+https://github.com/robur-coop/vif.git#07708ae4bc3963935046cccb065527750f83f360" ]
+  [ "vifu.dev"                        "git+https://github.com/robur-coop/vif.git#07708ae4bc3963935046cccb065527750f83f360" ]
 ]

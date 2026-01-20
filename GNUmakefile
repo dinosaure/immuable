@@ -34,7 +34,7 @@ immuable.install: immuable.hvt immuable.exe
 	@echo " GEN immuable.install"
 	@ocaml install.ml > $@
 
-all: immuable.install
+all: immuable.install | vendors
 
 .PHONY: clean
 clean:

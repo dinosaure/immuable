@@ -1,7 +1,7 @@
 # Immuable, a simple unikernel (in full OCaml) which serves files via HTTP
 
 Immuable is a unikernel that allows content to be served via the http protocol
-(http/1.1 and h2 via tls). The purpose of such a unikernel is to offer a simple
+(only HTTP/1.1). The purpose of such a unikernel is to offer a simple
 service (deploying a static website) at low cost:
 
 The operating system weighs only ~7MB. The GCE `f1-micro` instance offers
@@ -25,8 +25,8 @@ OCaml rather than another language is the ability to integrate proven software
 components and to have a language that is sufficiently "high-level" to be able
 to develop a slightly more complex application.
 
-In this case, all the protocols required by Immuable (from http to tcp,
-including dns and tls) are implemented in OCaml. For more details, we invite you
+In this case, all the protocols required by Immuable (from HTTP to TCP,
+including DNS and TLS) are implemented in OCaml. For more details, we invite you
 to take a look at the work of [our cooperative][robur].
 
 ## How to use `immuable`
