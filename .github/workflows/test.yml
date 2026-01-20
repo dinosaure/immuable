@@ -18,6 +18,6 @@ jobs:
           opam-local-packages: |
             *.opam
       - name: Install dependencies
-        run: opam install immuable
+        run: opam install immuable --verbose-on=immuable
       - name: Check immuable.hvt
         run: file $(opam var bin)/immuable.hvt
