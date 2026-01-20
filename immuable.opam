@@ -29,6 +29,7 @@ pin-depends: [
   [ "mirage-crypto-rng-mkernel.2.0.2" "git+https://github.com/dinosaure/mirage-crypto.git#820db4c1d19acd06dca82ce5615904848a852951" ]
   [ "mhttp.dev"                       "git+https://github.com/dinosaure/mhttp.git#0638dd4620757c0a8062afaa75d1546ae206a604" ]
   [ "flux.dev"                        "git+https://github.com/robur-coop/flux.git#7c4d8733596fd54f2f865c32747ba0eebdb964da" ]
+  [ "fluxt.dev"                        "git+https://github.com/robur-coop/flux.git#7c4d8733596fd54f2f865c32747ba0eebdb964da" ]
   [ "vif.dev"                         "git+https://github.com/robur-coop/vif.git#c4c707985246775562aaac65724736ef40d47483" ]
   [ "vifu.dev"                        "git+https://github.com/robur-coop/vif.git#c4c707985246775562aaac65724736ef40d47483" ]
 ]
