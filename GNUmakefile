@@ -5,7 +5,7 @@ vendors:
 
 immuable.hvt.target: | vendors
 	@echo " BUILD unikernel/main.exe"
-	@dune build --profile=release ./unikernel/main.exe
+	@dune build --root . --profile=release ./unikernel/main.exe
 	@echo " DESCR unikernel/main.exe"
 	@dune describe location \
 		--context solo5 --no-print-directory --root . \
@@ -13,7 +13,7 @@ immuable.hvt.target: | vendors
 
 immuable.exe.target: | vendors
 	@echo " BUILD bin/immuable.exe"
-	@dune build --profile=release ./bin/immuable.exe
+	@dune build --root . --profile=release ./bin/immuable.exe
 	@echo " DESCR bin/immuable.exe"
 	@dune describe location \
 		--context default --no-print-directory --root . \
