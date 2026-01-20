@@ -16,6 +16,7 @@ depends: [
   "flux"
   "carton"
   "art"
+  "encore"
 ]
 build: [
   [make "all"]
