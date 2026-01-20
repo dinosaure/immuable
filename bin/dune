@@ -11,6 +11,7 @@
   conan
   conan-database.light
   immuable.tree
+  progress
   fmt.tty
   fmt.cli
   logs.cli

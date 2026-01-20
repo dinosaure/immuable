@@ -19,5 +19,5 @@
 [ ! -d "vendors/vif" ] && opam source vif --dir vendors/vif
 [ ! -d "vendors/flux" ] && opam source flux --dir vendors/flux
 [ ! -d "vendors/prettym" ] && opam source prettym --dir vendors/prettym
-[ ! -d "vendors/multipart_from" ] && opam source multipart_form --dir vendors/multipart_form
-[ ! -d "vendors/mkernel-memtrace" ] && opam source mkernel-memtrace --dir vendors/mkernel-memtrace
+[ ! -d "vendors/multipart_form" ] && opam source multipart_form --dir vendors/multipart_form
+[ ! -d "vendors/progress" ] && opam source progress --dir vendors/progress

@@ -1,5 +1,6 @@
 let error_msgf fmt = Fmt.kstr (fun msg -> Error (`Msg msg)) fmt
 let errorf fmt = Fmt.kstr (fun msg -> Error msg) fmt
+let ( let@ ) finally fn = Fun.protect ~finally fn
 let () = Logs_threaded.enable ()
 
 let entry_of_filename q ?tbl alg filename =
@@ -42,6 +43,26 @@ let entry_of_tree ?tbl alg tree =
   let uid = Hash.get ctx |> Hash.to_raw_string |> Carton.Uid.unsafe_of_string in
   Option.iter (fun tbl -> Hashtbl.add tbl uid (`Tree str)) tbl;
   Cartonnage.Entry.make ~kind:`B ~length:(String.length str) uid ()
+
+let entry_of_metadata ?tbl alg mtbl =
+  let seq_of_metadata mtbl =
+    let seq = Hashtbl.to_seq mtbl in
+    Seq.map (fun (filepath, mime) -> Fmt.str "%a\000%s\000" Fpath.pp filepath mime) seq in
+  let module Hash = (val Digestif.module_of_hash' (alg :> Digestif.hash')) in
+  let len = Seq.fold_left (fun len str -> String.length str + len) 0 (seq_of_metadata mtbl) in
+  let bstr = Bstr.create len in
+  let fn dst_off str =
+    let len = String.length str in
+    Bstr.blit_from_string str ~src_off:0 bstr ~dst_off ~len;
+    dst_off + len in
+  let _len = Seq.fold_left fn 0 (seq_of_metadata mtbl) in
+  let hdr = Fmt.str "mime %d\000" len in
+  let ctx = Hash.empty in
+  let ctx = Hash.feed_string ctx hdr in
+  let ctx = Hash.feed_bigstring ctx bstr in
+  let uid = Hash.get ctx |> Hash.to_raw_string |> Carton.Uid.unsafe_of_string in
+  Option.iter (fun tbl -> Hashtbl.add tbl uid (`Mime bstr)) tbl;
+  Cartonnage.Entry.make ~kind:`D ~length:len uid ()
 
 let entry_of_commit ?tbl alg ~(root : Carton.Uid.t) ~(metadata : Carton.Uid.t) =
   let module Hash = (val Digestif.module_of_hash' (alg :> Digestif.hash')) in
@@ -118,11 +139,11 @@ module Magic = struct
 
     let make bstr =
       let map bstr ~pos len =
-        if pos + len > Bstr.length bstr then (
+        if pos + len > Bstr.length bstr then begin
           let dst = Bstr.make len '\000' in
           let len = Int.min (Bstr.length bstr - pos) len in
           Bstr.blit bstr ~src_off:pos dst ~dst_off:0 ~len;
-          dst)
+          dst end
         else Bstr.sub bstr ~off:pos ~len
       in
       let cache = Cachet.make ~map bstr in
@@ -212,27 +233,29 @@ module Magic = struct
     |> Conan.Metadata.mime
 end
 
-let rec clean orphans mtbl =
+let rec clean rep orphans mtbl =
   match Miou.care orphans with
   | Some None | None -> ()
   | Some (Some prm) ->
       let filename, mime = Miou.await_exn prm in
+      rep 1 ;
       Option.iter (Hashtbl.add mtbl filename) mime;
-      clean orphans mtbl
+      clean rep orphans mtbl
 
-let rec terminate orphans mtbl =
+let rec terminate rep orphans mtbl =
   match Miou.care orphans with
   | None -> ()
-  | Some None -> Miou.yield (); terminate orphans mtbl
+  | Some None -> Miou.yield (); terminate rep orphans mtbl
   | Some (Some prm) ->
       let filename, mime = Miou.await_exn prm in
+      rep 1;
       Option.iter (Hashtbl.add mtbl filename) mime;
-      terminate orphans mtbl
+      terminate rep orphans mtbl
 
-let rec tag orphans mtbl queue =
+let rec tag rep orphans mtbl queue =
   match Flux.Bqueue.get queue with
   | Some (filename, bstr) ->
-      clean orphans mtbl;
+      clean rep orphans mtbl;
       let _ =
         Miou.call ~orphans @@ fun () ->
         let mime = Magic.run bstr in
@@ -243,8 +266,8 @@ let rec tag orphans mtbl queue =
         Logs.debug (fun m -> m "[!] %a: %a" Fpath.pp filename pp mime);
         (filename, mime)
       in
-      tag orphans mtbl queue
-  | None -> terminate orphans mtbl
+      tag rep orphans mtbl queue
+  | None -> terminate rep orphans mtbl
 
 let value_of_filename ~len filename =
   let fd = Unix.openfile (Fpath.to_string filename) Unix.[ O_RDONLY ] 0o644 in
@@ -272,7 +295,7 @@ let pack_of_filename alg filename =
   let tbl = Hashtbl.create 10 in
   let mtbl = Hashtbl.create 10 in
   let queue = Flux.Bqueue.(create with_close 0x7ff) in
-  let prm = Miou.call @@ fun () -> tag (Miou.orphans ()) mtbl queue in
+  let prm = Miou.call @@ fun () -> tag ignore (Miou.orphans ()) mtbl queue in
   let entry2 = entry_of_filename queue ~tbl alg filename in
   let () = Flux.Bqueue.close queue in
   let () = Miou.await_exn prm in
@@ -295,17 +318,40 @@ let pack_of_filename alg filename =
   in
   Carton_miou_unix.to_pack ~with_header ~with_signature ~load t |> Result.ok
 
-let pack_of_directory alg root =
+let spinner =
+  let open Progress.Line in
+  let frames = [ "⠋"; "⠙"; "⠹"; "⠸"; "⠼"; "⠴"; "⠦"; "⠧"; "⠇"; "⠏" ] in
+  let spin = spinner ~frames () in
+  list [ spin; sum ~width:10 () ]
+
+let with_reporter ~config quiet t fn =
+  let on_file, finally =
+    match quiet with
+    | true -> (ignore, ignore)
+    | false ->
+        let display = Progress.Display.start ~config (Progress.Multi.line t) in
+        let[@warning "-8"] Progress.Reporter.[ reporter0 ] =
+          Progress.Display.reporters display in
+        let on_file n = reporter0 n; Progress.Display.tick display in
+        let finally () = Progress.Display.finalise display in
+        (on_file, finally) in
+  fn (on_file, finally)
+
+let pack_of_directory quiet (progress : Progress.Config.t) without_progress alg root =
   let tbl = Hashtbl.create 0x100
   and rtbl = Hashtbl.create 0x100
   and mtbl = Hashtbl.create 0x100 in
   let queue = Flux.Bqueue.(create with_close 0x7ff) in
-  let prm = Miou.call @@ fun () -> tag (Miou.orphans ()) mtbl queue in
   let ( let* ) = Result.bind in
-  let fn0 = walk_on_files alg (queue, rtbl, Some tbl) in
-  let* entries = Bos.OS.Path.fold ~elements:`Files fn0 [] [ root ] in
-  let () = Flux.Bqueue.close queue in
-  let () = Miou.await_exn prm in
+  let* entries =
+    with_reporter ~config:progress (quiet || without_progress) spinner @@ fun (rep, finally) ->
+    let prm = Miou.call @@ fun () -> tag rep (Miou.orphans ()) mtbl queue in
+    let@ () = finally in
+    let fn0 = walk_on_files alg (queue, rtbl, Some tbl) in
+    let* entries = Bos.OS.Path.fold ~elements:`Files fn0 [] [ root ] in
+    let () = Flux.Bqueue.close queue in
+    let () = Miou.await_exn prm in
+    Ok entries in
   Logs.debug (fun m ->
       m "%d/%d files recognized" (Hashtbl.length mtbl) (Hashtbl.length tbl));
   let fn1 = walk_on_directories alg (rtbl, Some tbl) in
@@ -314,14 +360,15 @@ let pack_of_directory alg root =
   let root = Hashtbl.find_opt rtbl root in
   let* root = Option.to_result ~none:`Root_not_found root in
   let metadata = null alg in
+  let entry1 = entry_of_metadata ~tbl alg mtbl in
   let entry0 = entry_of_commit ~tbl alg ~root ~metadata in
-  let entries = entry0 :: entries in
+  let entries = entry0 :: entry1 :: entries in
   let load uid () =
     match Hashtbl.find tbl uid with
     | `Commit str -> Carton.Value.of_string ~kind:`A str
     | `Tree str -> Carton.Value.of_string ~kind:`B str
     | `File (filename, len) -> value_of_filename ~len filename
-  in
+    | `Mime bstr -> Carton.Value.make ~kind:`D bstr in
   let with_header = List.length entries in
   let entries = List.to_seq entries in
   let module Hash = (val Digestif.module_of_hash' (alg :> Digestif.hash')) in
@@ -330,10 +377,10 @@ let pack_of_directory alg root =
   let with_signature = signature alg in
   Carton_miou_unix.to_pack ~with_header ~with_signature ~load t |> Result.ok
 
-let run _ alg root pagesize output =
+let run quiet progress without_progress alg root pagesize output =
   let ( let* ) = Result.bind in
   let* seq =
-    if Fpath.is_dir_path root then pack_of_directory alg root
+    if Fpath.is_dir_path root then pack_of_directory quiet progress without_progress alg root
     else pack_of_filename alg root
   in
   let oc = open_out (Fpath.to_string output) in
@@ -370,9 +417,9 @@ let pp_error ppf = function
   | `Root_not_found -> Fmt.string ppf "Root not found"
   | `Msg msg -> Fmt.string ppf msg
 
-let run quiet alg root pagesize output =
+let run quiet progress without_progress alg root pagesize output =
   Miou_unix.run @@ fun () ->
-  run quiet alg root pagesize output
+  run quiet progress without_progress alg root pagesize output
   |> Result.map_error (Fmt.str "%a." pp_error)
 
 open Cmdliner
@@ -487,9 +534,23 @@ let output =
   let open Arg in
   required & opt (some output) None & info [ "o"; "output" ] ~doc ~docv:"OUTPUT"
 
+let setup_progress max_width = Progress.Config.v ~max_width ()
+
+let width =
+  let doc = "Width of the terminal." in
+  let default = Terminal.Size.get_columns () in
+  let open Arg in
+  value & opt (some int) default & info [ "width" ] ~doc ~docv:"WIDTH"
+
+let setup_progress = Term.(const setup_progress $ width)
+
+let without_progress =
+  let doc = "Don't print progress bar." in
+  Arg.(value & flag & info [ "without-progress" ] ~doc)
+
 let term =
   let open Term in
-  const run $ setup_logs $ algorithm $ root $ pagesize $ output
+  const run $ setup_logs $ setup_progress $ without_progress $ algorithm $ root $ pagesize $ output
 
 let existing_filename =
   let doc = "The file whose MIME type needs to be determined." in
