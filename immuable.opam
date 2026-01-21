@@ -17,6 +17,7 @@ depends: [
   "carton"
   "art"
   "encore"
+  "cattery"
 ]
 build: [
   [make "all"]
@@ -33,4 +34,5 @@ pin-depends: [
   [ "fluxt.dev"                       "git+https://github.com/robur-coop/flux.git#7c4d8733596fd54f2f865c32747ba0eebdb964da" ]
   [ "vif.dev"                         "git+https://github.com/robur-coop/vif.git#c4c707985246775562aaac65724736ef40d47483" ]
   [ "vifu.dev"                        "git+https://github.com/robur-coop/vif.git#c4c707985246775562aaac65724736ef40d47483" ]
+  [ "cattery.dev"                     "git+https://git.robur.coop/robur/cattery.git#7cf6fd84c660484776252e6595b5a252ada23c30" ]
 ]

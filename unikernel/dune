@@ -13,6 +13,7 @@
   encore
   mhttp
   mirage-crypto-rng-mkernel
+  cattery
   re
   gmp
   cachet

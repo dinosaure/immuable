@@ -7,17 +7,17 @@ immuable.hvt.target: | vendors
 	@echo " BUILD unikernel/main.exe"
 	@dune build --root . --profile=release ./unikernel/main.exe
 	@echo " DESCR unikernel/main.exe"
-	@dune describe location \
-		--context solo5 --no-print-directory --root . \
-		./unikernel/main.exe &> immuable.hvt.target
+	@$(shell dune describe location \
+		--context solo5 --no-print-directory --root . --display=quiet \
+		./unikernel/main.exe 1> $@ 2>&1)
 
 immuable.exe.target: | vendors
 	@echo " BUILD bin/immuable.exe"
 	@dune build --root . --profile=release ./bin/immuable.exe
 	@echo " DESCR bin/immuable.exe"
-	@dune describe location \
-		--context default --no-print-directory --root . \
-		./bin/immuable.exe &> immuable.exe.target
+	@$(shell dune describe location \
+		--context default --no-print-directory --root . --display=quiet \
+		./bin/immuable.exe 1> $@ 2>&1)
 
 immuable.hvt: immuable.hvt.target
 	@echo " COPY immuable.hvt"

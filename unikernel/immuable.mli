@@ -12,6 +12,7 @@ val fs :
   -> (Mkernel.Block.t Carton.t * 'a) Cartonnage.Entry.t array
   -> (t, [> error ]) result
 
+val copy : t -> t
 val find : t -> string -> (Bstr.t, [> error ]) result
 val etag : t -> string -> (string, [> error ]) result
 val if_match : t -> ('c, 'v) Vifu.Request.t -> string -> bool
@@ -22,4 +23,5 @@ val of_block :
   -> name:string
   -> t Mkernel.arg
 
-val handler : t -> ('c, 'value) Vifu.Handler.t
+val handler :
+  pool:('a, t Cattery.t) Vifu.Device.device -> ('c, 'value) Vifu.Handler.t

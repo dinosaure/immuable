@@ -22,7 +22,12 @@ let index fs req _server _user's_value =
 let _1s = 1_000_000_000
 let rec gc () = Gc.compact (); Mkernel.sleep _1s; gc ()
 
-let run _ (cfg, digest) cidr gateway port =
+let pool =
+  let finally _pool = () in
+  Vifu.Device.v ~name:"pool" ~finally [] @@ fun (pool_size, fs) ->
+  Cattery.create pool_size @@ fun () -> Immuable.copy fs
+
+let run _ (cfg, digest) cidr gateway port pool_size =
   let devices =
     let open Mkernel in
     [
@@ -40,13 +45,14 @@ let run _ (cfg, digest) cidr gateway port =
   in
   Fun.protect ~finally @@ fun () ->
   let cfg = Vifu.Config.v port in
-  let handlers = [ Immuable.handler fs ] in
+  let handlers = [ Immuable.handler ~pool ] in
+  let devices = Vifu.Devices.[ pool ] in
   let routes =
     let open Vifu.Route in
     let open Vifu.Uri in
     [ get (rel /?? any) --> index fs ]
   in
-  Vifu.run ~cfg ~handlers tcpv4 routes ()
+  Vifu.run ~cfg ~handlers ~devices tcpv4 routes (pool_size, fs)
 
 open Cmdliner
 
@@ -227,9 +233,20 @@ let setup_carton_config =
   let open Term in
   const setup_carton_config $ algorithm $ cachesize $ setup_signature
 
+let pool_size =
+  let doc = "How many elements our internal pool can keep." in
+  let open Arg in
+  value & opt int 4 & info [ "pool-size" ] ~doc ~docv:"NUMBER"
+
 let term =
   let open Term in
-  const run $ setup_logs $ setup_carton_config $ ipv4 $ ipv4_gateway $ port
+  const run
+  $ setup_logs
+  $ setup_carton_config
+  $ ipv4
+  $ ipv4_gateway
+  $ port
+  $ pool_size
 
 let cmd =
   let info = Cmd.info "immuable" in

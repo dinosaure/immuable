@@ -80,6 +80,8 @@ let fs ~cfg entries =
   List.iter fn files;
   Ok { tree; pack }
 
+let copy { tree; pack } = { tree; pack= Carton.copy pack }
+
 let of_block ~cfg ~digest ~name =
   let v blk () =
     let entries = Pate.entries_of_pack ~cfg ~digest blk in
@@ -116,10 +118,12 @@ let if_match t req target =
   | Some hash' -> String.equal (hash :> string) (hash' :> string)
   | None -> false
 
-let handler t =
+let handler ~pool =
   ();
-  fun req target _server _ ->
+  fun req target server _ ->
     let open Vifu.Response.Syntax in
+    let pool = Vifu.Server.device pool server in
+    Cattery.use pool @@ fun t ->
     match find t target with
     | Ok _ when if_match t req target ->
         let process =
