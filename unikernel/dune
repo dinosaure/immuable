@@ -13,6 +13,7 @@
   encore
   mhttp
   mirage-crypto-rng-mkernel
+  cattery
   re
   gmp
   cachet
@@ -41,11 +42,11 @@
  (action
   (run solo5-elftool gen-manifest manifest.json manifest.c)))
 
-(rule
- (targets manifest.json)
- (enabled_if
-  (= %{context_name} "solo5"))
- (action
-  (with-stdout-to
-   manifest.json
-   (run %{exe:main.exe} --ipv4=0.0.0.0/24))))
+; (rule
+;  (targets manifest.json)
+;  (enabled_if
+;   (= %{context_name} "solo5"))
+;  (action
+;   (with-stdout-to
+;    manifest.json
+;    (run %{exe:main.exe} --ipv4=0.0.0.0/24))))

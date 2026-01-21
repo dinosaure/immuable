@@ -61,7 +61,7 @@ let rec walk ~cfg pack entries (current, node) =
 
 let walk ~cfg pack root = walk ~cfg pack [] (Fpath.v "/", root)
 
-type t = { tree: (Fpath.t, Carton.Uid.t) Hashtbl.t; pack : Mkernel.Block.t Carton.t }
+type t = { tree: Carton.Uid.t Art.t; pack: Mkernel.Block.t Carton.t }
 
 let fs ~cfg entries =
   let* () = guard (Array.length entries >= 3) invalid_immuable_image in
@@ -71,12 +71,16 @@ let fs ~cfg entries =
   let pack, _ = Cartonnage.Entry.meta commit in
   let* root, _metadata = get_root_and_metadata ~cfg pack commit in
   let* files = walk ~cfg pack root in
-  let tree = Hashtbl.create 0x100 in
+  Log.debug (fun m -> m "Fill our art tree");
+  let tree = Art.make () in
   let fn (path, uid) =
-    Log.debug (fun m -> m "[+] %a" Fpath.pp path);
-    Hashtbl.add tree path uid in
+    let key = Art.key (Fpath.to_string path) in
+    Art.insert tree key uid
+  in
   List.iter fn files;
   Ok { tree; pack }
+
+let copy { tree; pack } = { tree; pack= Carton.copy pack }
 
 let of_block ~cfg ~digest ~name =
   let v blk () =
@@ -90,14 +94,22 @@ let of_block ~cfg ~digest ~name =
 
 let find t path =
   try
-    let uid = Hashtbl.find t.tree (Fpath.v path) in
+    let uid = Art.find t.tree (Art.key path) in
+    Log.debug (fun m -> m "%s -> %a" path Carton.Uid.pp uid);
     let value = load t.pack uid in
     let bstr = Carton.Value.bigstring value in
     Ok (Bstr.sub bstr ~off:0 ~len:(Carton.Value.length value))
-  with _ -> Error `Not_found
+  with exn ->
+    Log.err (fun m ->
+        m "Got an exception when we tried to find %s: %s" path
+          (Printexc.to_string exn));
+    Error `Not_found
 
 let etag t path =
-  try Ok (Hashtbl.find t.tree (Fpath.v path) :> string) with _ -> Error `Not_found
+  try
+    let hash = Art.find t.tree (Art.key path) in
+    Ok (Ohex.encode (hash :> string))
+  with _ -> Error `Not_found
 
 let if_match t req target =
   let hdrs = Vifu.Request.headers req in
@@ -106,10 +118,12 @@ let if_match t req target =
   | Some hash' -> String.equal (hash :> string) (hash' :> string)
   | None -> false
 
-let handler t =
+let handler ~pool =
   ();
-  fun req target _server _ ->
+  fun req target server _ ->
     let open Vifu.Response.Syntax in
+    let pool = Vifu.Server.device pool server in
+    Cattery.use pool @@ fun t ->
     match find t target with
     | Ok _ when if_match t req target ->
         let process =
@@ -130,4 +144,6 @@ let handler t =
           Vifu.Response.respond `OK
         in
         Some process
-    | _ -> None
+    | Error _ ->
+        Log.err (fun m -> m "Target %s not found" target);
+        None
