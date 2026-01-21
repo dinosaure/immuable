@@ -1,8 +1,8 @@
 # Immuable, a simple unikernel (in full OCaml) which serves files via HTTP
 
-Immuable is a unikernel that allows content to be served via the http protocol
-(only HTTP/1.1). The purpose of such a unikernel is to offer a simple
-service (deploying a static website) at low cost:
+Immuable is a unikernel that allows content to be served via the HTTP protocol
+(only HTTP/1.1). The purpose of such a unikernel is to offer a simple service
+(deploying a static website) at low cost:
 
 The operating system weighs only ~7MB. The GCE `f1-micro` instance offers
 0.6GB. The cost of such an instance (already oversized) is ~$4.69/month. We
@@ -17,8 +17,8 @@ auxiliary attack vector for your server.
 
 However, the performance of a unikernel is **not** an advantage. We are talking
 about a fairly minimal service with _reasonable_ performance, but if
-"performance" is the issue, it is not advisable to use a unikernel (due to the
-barrier that exists between the unikernel and the host system).
+"performance" is your primary issue, it is not advisable to use a unikernel (due
+to the barrier that exists between the unikernel and the host system).
 
 Immuable is therefore an example of a unikernel in OCaml. The advantage of using
 OCaml rather than another language is the ability to integrate proven software
@@ -59,22 +59,67 @@ ways to deploy a unikernel. You can do it directly using Solo5 (and
 
 ### Deploy with Solo5
 
-solo5-hvt
+An unikernel is a full-fledged operating system that can be launched via KVM,
+BHyve, or OpenVMM (on Linux, FreeBSD, or OpenBSD, respectively). In this case,
+the unikernel you have just installed (`immuable.hvt`) is a [Solo5][solo5]
+unikernel that can be run using the `solo5-hvt` tender. The "tender" is a
+userspace executable that acts as a bridge between the unikernel and the host
+system whenever it needs to communicate with the network (via an Ethernet
+interface) or manage block devices. Immuable utilizes both of these devices.
 
-## How to build `immuable`
+The second device, the block device, has just been created: it is your archive,
+a simple file resulting from the compression of all your static files. The
+first device is an Ethernet interface, better known as a tap interface. You
+must create one so that the unikernel can connect to a network. The simplest
+way to do this is to:
+- Create what is known as a bridge.
+- Create a tap interface and "plug" it into the bridge.
 
 ```shell
-$ ./source.sh
-$ dune build
-$ cp _build/solo5/unikernel/main.exe immuable.hvt
 $ sudo ip link add name service type bridge
 $ sudo ip addr add 10.0.0.1/24 dev service
 $ sudo ip tuntap add name tap0 mode tap
 $ sudo ip link set tap0 master service
 $ sudo ip link set service up
 $ sudo ip link set tap0 up
-$ dune exec bin/immuable.exe -- my-static-website/ -o block.pack
-$ solo5-hvt --net:service=tap0 --block:immuable=block.pack -- immuable.hvt \
-  --ipv4=10.0.0.2/24 --ipv4-gateway=10.0.0.1 \
-  --color=always
 ```
+
+You can use the `net.sh` script, which performs these operations on Linux.
+
+Finally, once equipped with a tap interface and your archive file, you can
+launch the immuable.hvt unikernel using Solo5 as follows:
+```shell
+$ solo5-hvt --net:service=tap0 --block:immuable=pack.pack -- \
+  $(opam var bin)/immuable.hvt --ipv4=10.0.0.2/24 --ipv4-gateway=10.0.0.1
+```
+
+And your website will be available at http://10.0.0.2!
+
+### Deploy with [Albatross][albatross]
+
+Solo5 is fairly straightforward to use, but you might want to deploy your
+unikernel to a remote server without manually managing the tap interface or the
+archive. In this case, Albatross might be the right solution for you.
+
+Albatross is a service that can be installed on systems like Debian to manage
+and orchestrate unikernels. We recommend referring to the [official project
+documentation][albatross-deploy] for instructions on how to install and deploy Albatross. Once set
+up, you simply need to transfer your archive as a block device and then
+transfer your unikernel:
+```shell
+$ albatross-client create-block \
+  --ca user.pem --ca-key user.key --server-ca cacert.pem \
+  --destination chameau.unikernel \
+  --data=pack.pack archive $(du -m pack.pack|cut -f1)
+$ albatross-client create \
+  --ca user.pem --ca-key user.key --server-ca cacert.pem \
+  --destination chameau.unikernel \
+  immuable $(opam var bin)/immuable.hvt \
+  --net service --block archive \
+  --arg="--ipv4=10.0.0.2/24" --arg="--ipv4-gateway=10.0.0.1"
+```
+
+[solo5]: https://github.com/solo5/solo5
+[robur]: https://robur.coop/
+[albatross]: https://github.com/robur-coop/albatross
+[albatross-deploy]: https://github.com/robur-coop/albatross?tab=readme-ov-file#setup
