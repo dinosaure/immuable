@@ -13,7 +13,7 @@ val fs :
   -> (t, [> error ]) result
 
 val copy : t -> t
-val find : t -> string -> (Bstr.t, [> error ]) result
+val find : t -> string -> (Bstr.t * string option, [> error ]) result
 val etag : t -> string -> (string, [> error ]) result
 val if_match : t -> ('c, 'v) Vifu.Request.t -> string -> bool
 

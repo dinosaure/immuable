@@ -44,10 +44,14 @@ let entry_of_tree ?tbl alg tree =
   Option.iter (fun tbl -> Hashtbl.add tbl uid (`Tree str)) tbl;
   Cartonnage.Entry.make ~kind:`B ~length:(String.length str) uid ()
 
-let entry_of_metadata ?tbl alg mtbl =
+let entry_of_metadata ~root ?tbl alg mtbl =
   let seq_of_metadata mtbl =
     let seq = Hashtbl.to_seq mtbl in
-    let fn (filepath, mime) = Fmt.str "%a\000%s\000" Fpath.pp filepath mime in
+    let fn (filepath, mime) =
+      let filepath = Fpath.relativize ~root filepath in
+      let filepath = Option.get filepath in
+      Fmt.str "%a\000%s\000" Fpath.pp filepath mime
+    in
     Seq.map fn seq
   in
   let module Hash = (val Digestif.module_of_hash' (alg :> Digestif.hash')) in
@@ -63,7 +67,7 @@ let entry_of_metadata ?tbl alg mtbl =
     dst_off + len
   in
   let _len = Seq.fold_left fn 0 (seq_of_metadata mtbl) in
-  let hdr = Fmt.str "mime %d\000" len in
+  let hdr = Fmt.str "tag %d\000" len in
   let ctx = Hash.empty in
   let ctx = Hash.feed_string ctx hdr in
   let ctx = Hash.feed_bigstring ctx bstr in
@@ -417,10 +421,10 @@ let pack_of_directory quiet (progress : Progress.Config.t) without_progress
   let fn1 = walk_on_directories alg (rtbl, Some tbl) in
   let elements = `Dirs and traverse = `None in
   let* entries = Bos.OS.Path.fold ~elements ~traverse fn1 entries [ root ] in
+  let entry1 = entry_of_metadata ~root ~tbl alg mtbl in
   let root = Hashtbl.find_opt rtbl root in
   let* root = Option.to_result ~none:`Root_not_found root in
-  let metadata = null alg in
-  let entry1 = entry_of_metadata ~tbl alg mtbl in
+  let metadata = Cartonnage.Entry.uid entry1 in
   let entry0 = entry_of_commit ~tbl alg ~root ~metadata in
   let entries = entry0 :: entry1 :: entries in
   let load uid () =
