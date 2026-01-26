@@ -192,10 +192,17 @@ let compile ?(on = ignorem) ~identify ~digest_length seq =
         Hashtbl.add cursors entry.number offset;
         Hashtbl.add crcs offset crc;
         match entry.Carton.First_pass.kind with
-        | Carton.First_pass.Base _ ->
+        | Carton.First_pass.Base kind ->
             Hashtbl.add sizes offset (ref size);
             Hashtbl.add is_base entry.number offset;
-            let uid = Option.get (Option.map i.serialize !ctx) in
+            let uid =
+              match Option.map i.serialize !ctx with
+              | Some uid -> uid
+              | None ->
+                  let size = entry.Carton.First_pass.size in
+                  let ctx = i.init kind size in
+                  i.serialize ctx
+            in
             ctx := None;
             Hashtbl.add index uid offset
         | Ofs { sub; source; target; _ } ->

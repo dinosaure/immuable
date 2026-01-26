@@ -44,13 +44,16 @@ let entry_of_tree ?tbl alg tree =
   Option.iter (fun tbl -> Hashtbl.add tbl uid (`Tree str)) tbl;
   Cartonnage.Entry.make ~kind:`B ~length:(String.length str) uid ()
 
-let entry_of_metadata ~root ?tbl alg mtbl =
+let entry_of_metadata ?root ?tbl alg mtbl =
   let seq_of_metadata mtbl =
     let seq = Hashtbl.to_seq mtbl in
     let fn (filepath, mime) =
-      let filepath = Fpath.relativize ~root filepath in
-      let filepath = Option.get filepath in
-      Fmt.str "%a\000%s\000" Fpath.pp filepath mime
+      match root with
+      | Some root ->
+          let filepath = Fpath.relativize ~root filepath in
+          let filepath = Option.get filepath in
+          Fmt.str "%a\000%s\000" Fpath.pp filepath mime
+      | None -> Fmt.str "%a\000%s\000" Fpath.pp filepath mime
     in
     Seq.map fn seq
   in
@@ -124,10 +127,6 @@ let rec walk_on_directories alg (rtbl, tbl) path entries =
   Logs.debug (fun m -> m "[+] %a" Fpath.pp path);
   Hashtbl.add rtbl path (Cartonnage.Entry.uid entry);
   entry :: entries
-
-let null alg =
-  let module Hash = (val Digestif.module_of_hash' (alg :> Digestif.hash')) in
-  String.make Hash.digest_size '\000' |> Carton.Uid.unsafe_of_string
 
 module Magic = struct
   open Conan.Sigs
@@ -243,6 +242,19 @@ module Magic = struct
     Conan.Process.descending_walk unix syscall t db
     |> Unix_scheduler.prj
     |> Conan.Metadata.mime
+
+  let of_filepath filepath =
+    let fd = Unix.openfile (Fpath.to_string filepath) Unix.[ O_RDONLY ] 0o600 in
+    let len = (Unix.fstat fd).Unix.st_size in
+    let@ () = fun () -> Unix.close fd in
+    let barr =
+      Unix.map_file fd Bigarray.char Bigarray.c_layout false [| len |]
+    in
+    let bstr = Bigarray.array1_of_genarray barr in
+    let t = Access.make bstr in
+    Conan.Process.descending_walk unix syscall t db
+    |> Unix_scheduler.prj
+    |> Conan.Metadata.mime
 end
 
 let rec clean rep orphans mtbl =
@@ -347,35 +359,44 @@ let output_pack alg result pagesize seq =
     else flush oc;
     signature
   in
+  Logs.debug (fun m -> m "Signature: %s" signature);
   match result with
   | Some _ -> Ok ()
   | None ->
       let target = Fmt.str "pack-%s.pack" signature in
       rename filepath target; Ok ()
 
-let pack_of_filename alg filename result pagesize =
+let pack_of_filename without_recognition alg filename result pagesize =
   let tbl = Hashtbl.create 10 in
-  (* let queue = Flux.Bqueue.(create with_close 0x7ff) in
-  let prm = Miou.call @@ fun () -> tag ignore (Miou.orphans ()) mtbl queue in *)
-  let entry2 = entry_of_filename ~tbl alg filename in
-  (* let () = Flux.Bqueue.close queue in
-  let () = Miou.await_exn prm in *)
-  let node = Cartonnage.Entry.uid entry2 in
+  let entry3, mime =
+    if without_recognition then (entry_of_filename ~tbl alg filename, None)
+    else
+      let prm = Miou.call @@ fun () -> Magic.of_filepath filename in
+      let entry = entry_of_filename ~tbl alg filename in
+      let mime = Miou.await prm in
+      let mime = Result.to_option mime |> Option.join in
+      (entry, mime)
+  in
+  let mtbl = Hashtbl.create 1 in
+  Option.iter (Hashtbl.add mtbl (Fpath.base filename)) mime;
+  let entry1 = entry_of_metadata ~tbl alg mtbl in
+  let node = Cartonnage.Entry.uid entry3 in
   let tree = [ { Tree.perm= `Normal; name= Fpath.filename filename; node } ] in
-  let entry1 = entry_of_tree ~tbl alg tree in
-  let metadata = null alg in
-  let root = Cartonnage.Entry.uid entry1 in
+  let entry2 = entry_of_tree ~tbl alg tree in
+  let root = Cartonnage.Entry.uid entry2 in
+  let metadata = Cartonnage.Entry.uid entry1 in
   let entry0 = entry_of_commit ~tbl alg ~root ~metadata in
-  let entries = [ entry0; entry1; entry2 ] in
+  let entries = [ entry0; entry1; entry2; entry3 ] in
   let targets = List.map Cartonnage.Target.make entries in
   let t = List.to_seq targets in
-  let with_header = 3 in
+  let with_header = 4 in
   let with_signature = signature alg in
   let load uid () =
     match Hashtbl.find tbl uid with
     | `Commit str -> Carton.Value.of_string ~kind:`A str
     | `Tree str -> Carton.Value.of_string ~kind:`B str
     | `File (filename, len) -> value_of_filename ~len filename
+    | `Mime bstr -> Carton.Value.make ~kind:`D bstr
   in
   let seq = Carton_miou_unix.to_pack ~with_header ~with_signature ~load t in
   output_pack alg result pagesize seq
@@ -453,7 +474,7 @@ let run quiet progress without_progress without_recognition alg root pagesize
   if Fpath.is_dir_path root then
     pack_of_directory quiet progress without_progress without_recognition alg
       root result pagesize
-  else pack_of_filename alg root result pagesize
+  else pack_of_filename without_recognition alg root result pagesize
 
 let run_mime quiet filename =
   let fd = Unix.openfile (Fpath.to_string filename) [ O_RDONLY ] 0o644 in
