@@ -7,11 +7,13 @@ let index fs req _server _user's_value =
   | Ok _ when Immuable.if_match fs req "/index.html" ->
       let* () = Vifu.Response.with_string req "" in
       Vifu.Response.respond `Not_modified
-  | Ok bstr ->
+  | Ok (bstr, _) ->
       let str = Bstr.to_string bstr in
       let etag = Result.get_ok (Immuable.etag fs "/index.html") in
       let field = "ETag" in
       let* () = Vifu.Response.add ~field (etag :> string) in
+      let field = "Content-Type" in
+      let* () = Vifu.Response.add ~field "text/html; charset=utf-8" in
       let* () = Vifu.Response.with_string req str in
       Vifu.Response.respond `OK
   | Error _ ->

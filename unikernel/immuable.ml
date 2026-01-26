@@ -26,6 +26,7 @@ let pp_error ppf = function
   | `Not_found -> Fmt.string ppf "Not found"
 
 let load pack uid =
+  Log.debug (fun m -> m "load %a" Carton.Uid.pp uid);
   let size = Carton.size_of_uid pack ~uid Carton.Size.zero in
   let blob = Carton.Blob.make ~size in
   Carton.of_uid pack blob ~uid
@@ -61,7 +62,25 @@ let rec walk ~cfg pack entries (current, node) =
 
 let walk ~cfg pack root = walk ~cfg pack [] (Fpath.v "/", root)
 
-type t = { tree: Carton.Uid.t Art.t; pack: Mkernel.Block.t Carton.t }
+type t = {
+    tree: Carton.Uid.t Art.t
+  ; pack: Mkernel.Block.t Carton.t
+  ; mime: string Art.t
+}
+
+let fill_mime_database pack hash =
+  let str = Carton.Value.string (load pack hash) in
+  let entries = String.split_on_char '\000' str in
+  let mime = Art.make () in
+  let rec go = function
+    | [] -> ()
+    | filepath :: value :: rest ->
+        Log.debug (fun m -> m "MIME of %s: %s" filepath value);
+        let key = Art.key ("/" ^ filepath) in
+        Art.insert mime key value; go rest
+    | _ :: _ -> Log.warn (fun m -> m "Malformed MIME database")
+  in
+  go entries; mime
 
 let fs ~cfg entries =
   let* () = guard (Array.length entries >= 3) invalid_immuable_image in
@@ -69,18 +88,18 @@ let fs ~cfg entries =
   let* () = guard predicate unexpected_first_immuable_entry in
   let commit = entries.(0) in
   let pack, _ = Cartonnage.Entry.meta commit in
-  let* root, _metadata = get_root_and_metadata ~cfg pack commit in
+  let* root, metadata = get_root_and_metadata ~cfg pack commit in
+  let mime = fill_mime_database pack metadata in
   let* files = walk ~cfg pack root in
-  Log.debug (fun m -> m "Fill our art tree");
   let tree = Art.make () in
   let fn (path, uid) =
     let key = Art.key (Fpath.to_string path) in
     Art.insert tree key uid
   in
   List.iter fn files;
-  Ok { tree; pack }
+  Ok { tree; pack; mime }
 
-let copy { tree; pack } = { tree; pack= Carton.copy pack }
+let copy { tree; pack; mime } = { tree; pack= Carton.copy pack; mime }
 
 let of_block ~cfg ~digest ~name =
   let v blk () =
@@ -92,22 +111,24 @@ let of_block ~cfg ~digest ~name =
   in
   Mkernel.map v [ Mkernel.block name ]
 
-let find t path =
+let find t filepath =
   try
-    let uid = Art.find t.tree (Art.key path) in
-    Log.debug (fun m -> m "%s -> %a" path Carton.Uid.pp uid);
+    let key = Art.key filepath in
+    let uid = Art.find t.tree key in
+    Log.debug (fun m -> m "%s -> %a" filepath Carton.Uid.pp uid);
     let value = load t.pack uid in
     let bstr = Carton.Value.bigstring value in
-    Ok (Bstr.sub bstr ~off:0 ~len:(Carton.Value.length value))
+    let mime = Art.find_opt t.mime key in
+    Ok (Bstr.sub bstr ~off:0 ~len:(Carton.Value.length value), mime)
   with exn ->
     Log.err (fun m ->
-        m "Got an exception when we tried to find %s: %s" path
+        m "Got an exception when we tried to find %s: %s" filepath
           (Printexc.to_string exn));
     Error `Not_found
 
-let etag t path =
+let etag t filepath =
   try
-    let hash = Art.find t.tree (Art.key path) in
+    let hash = Art.find t.tree (Art.key filepath) in
     Ok (Ohex.encode (hash :> string))
   with _ -> Error `Not_found
 
@@ -131,7 +152,7 @@ let handler ~pool =
           Vifu.Response.respond `Not_modified
         in
         Some process
-    | Ok bstr ->
+    | Ok (bstr, mime) ->
         let process =
           let field = "content-length" in
           let value = string_of_int (Bstr.length bstr) in
@@ -139,6 +160,11 @@ let handler ~pool =
           let field = "etag" in
           let etag = Result.get_ok (etag t target) in
           let* () = Vifu.Response.add ~field (etag :> string) in
+          let* () =
+            match mime with
+            | Some mime -> Vifu.Response.add ~field:"Content-Type" mime
+            | None -> Vifu.Response.return ()
+          in
           let str = Bstr.to_string bstr in
           let* () = Vifu.Response.with_string req str in
           Vifu.Response.respond `OK
