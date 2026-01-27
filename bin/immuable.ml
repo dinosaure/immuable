@@ -359,14 +359,14 @@ let output_pack alg result pagesize seq =
     else flush oc;
     signature
   in
-  Logs.debug (fun m -> m "Signature: %s" signature);
   match result with
-  | Some _ -> Ok ()
+  | Some filepath -> Ok filepath
   | None ->
       let target = Fmt.str "pack-%s.pack" signature in
-      rename filepath target; Ok ()
+      rename filepath target;
+      Ok (Fpath.v target)
 
-let pack_of_filename without_recognition alg filename result pagesize =
+let pack_of_filename quiet without_recognition alg filename result pagesize =
   let tbl = Hashtbl.create 10 in
   let entry3, mime =
     if without_recognition then (entry_of_filename ~tbl alg filename, None)
@@ -399,7 +399,10 @@ let pack_of_filename without_recognition alg filename result pagesize =
     | `Mime bstr -> Carton.Value.make ~kind:`D bstr
   in
   let seq = Carton_miou_unix.to_pack ~with_header ~with_signature ~load t in
-  output_pack alg result pagesize seq
+  let ( let* ) = Result.bind in
+  let* filepath = output_pack alg result pagesize seq in
+  if not quiet then Fmt.pr "%a\n%!" Fpath.pp filepath;
+  Ok ()
 
 let spinner =
   let open Progress.Line in
@@ -461,20 +464,24 @@ let pack_of_directory quiet (progress : Progress.Config.t) without_progress
   let ref_length = Hash.digest_size in
   let seq = Carton_miou_unix.delta ~ref_length ~load entries in
   let with_signature = signature alg in
-  with_reporter ~config:progress
-    (quiet || without_progress)
-    (bar ~total:with_header)
-  @@ fun rep ->
-  let seq = Seq.map (fun entry -> rep 1; entry) seq in
-  let seq = Carton_miou_unix.to_pack ~with_header ~with_signature ~load seq in
-  output_pack alg result pagesize seq
+  let* filepath =
+    with_reporter ~config:progress
+      (quiet || without_progress)
+      (bar ~total:with_header)
+    @@ fun rep ->
+    let seq = Seq.map (fun entry -> rep 1; entry) seq in
+    let seq = Carton_miou_unix.to_pack ~with_header ~with_signature ~load seq in
+    output_pack alg result pagesize seq
+  in
+  if not quiet then Fmt.pr "%a\n%!" Fpath.pp filepath;
+  Ok ()
 
 let run quiet progress without_progress without_recognition alg root pagesize
     result =
   if Fpath.is_dir_path root then
     pack_of_directory quiet progress without_progress without_recognition alg
       root result pagesize
-  else pack_of_filename without_recognition alg root result pagesize
+  else pack_of_filename quiet without_recognition alg root result pagesize
 
 let run_mime quiet filename =
   let fd = Unix.openfile (Fpath.to_string filename) [ O_RDONLY ] 0o644 in
