@@ -38,4 +38,5 @@ pin-depends: [
   [ "cachet.dev"                      "git+https://github.com/robur-coop/cachet.git#5352fa9ca3d4d62b506d85dcd8f6f06a7f38dd45" ]
   [ "carton.dev"                      "git+https://github.com/robur-coop/carton.git#909b010dfbbbaa673c63efce7559205672ca37a3" ]
   [ "carton-miou.dev"                 "git+https://github.com/robur-coop/carton.git#909b010dfbbbaa673c63efce7559205672ca37a3" ]
+  [ "cattery.dev"                     "git+https://git.robur.coop/robur/cattery.git#7cf6fd84c660484776252e6595b5a252ada23c30" ]
 ]
