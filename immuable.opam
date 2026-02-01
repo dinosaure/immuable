@@ -24,7 +24,7 @@ build: [
 ]
 synopsis: "An unikernel which serve HTTP contents"
 pin-depends: [
-  [ "mkernel.dev"                     "git+https://git.robur.coop/robur/mkernel.git#81a20185f638854ae07e64bbc1a5400bf6588776" ]
+  [ "mkernel.dev"                     "git+https://git.robur.coop/robur/mkernel.git#d0419952922b7924bc2a9a258bfebc950952751e" ]
   [ "utcp.dev"                        "git+https://github.com/dinosaure/utcp.git#50d0f3a0b42e8ffd3e4b15131dcf2a61b87ef96b" ]
   [ "mnet.dev"                        "git+https://git.robur.coop/robur/mnet.git#26214790b53df78c00eafc48594cfa01290de0df" ]
   [ "httpcats.dev"                    "git+https://github.com/robur-coop/httpcats.git#56ad42dd5667c1699240c609fd0e193f88bba1fb" ]
