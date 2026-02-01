@@ -73,7 +73,7 @@ let fill_mime_database pack hash =
   let entries = String.split_on_char '\000' str in
   let mime = Art.make () in
   let rec go = function
-    | [] -> ()
+    | [] | [""]-> ()
     | filepath :: value :: rest ->
         Log.debug (fun m -> m "MIME of %s: %s" filepath value);
         let key = Art.key ("/" ^ filepath) in
