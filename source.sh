@@ -20,3 +20,4 @@
 [ ! -d "vendors/flux" ] && opam source flux --dir vendors/flux
 [ ! -d "vendors/prettym" ] && opam source prettym --dir vendors/prettym
 [ ! -d "vendors/multipart_form" ] && opam source multipart_form --dir vendors/multipart_form
+[ ! -d "vendors/utcp" ] && opam source utcp --dir vendors/utcp

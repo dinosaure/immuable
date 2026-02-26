@@ -33,7 +33,7 @@ let run _ (cfg, digest) cidr gateway port pool_size =
   let devices =
     let open Mkernel in
     [
-      Mnet.stackv4 ~name:"service" ?gateway cidr
+      Mnet.stack ~name:"service" ?gateway cidr
     ; Immuable.of_block ~cfg ~digest ~name:"immuable"
     ]
   in
