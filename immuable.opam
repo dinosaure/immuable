@@ -27,4 +27,5 @@ pin-depends: [
   [ "vif.dev" "git+https://github.com/robur-coop/vif.git#3fb86c53bc56d3af78ce5df76b285a2b476e39ad" ]
   [ "vifu.dev" "git+https://github.com/robur-coop/vif.git#3fb86c53bc56d3af78ce5df76b285a2b476e39ad" ]
   [ "cattery.dev" "git+https://git.robur.coop/robur/cattery.git#d0ce64092a381ef8491172fe4587dc1fc4736e33" ]
+  [ "zarith.dev" "git+https://github.com/mirage/Zarith.git#df8969d9bb95cffca13e31a615189ab27ada0684" ]
 ]
