@@ -16,6 +16,7 @@
   mhttp
   mirage-crypto-rng-mkernel
   cattery
+  lru
   re
   gmp
   cachet

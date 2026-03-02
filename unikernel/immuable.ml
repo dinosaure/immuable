@@ -25,8 +25,15 @@ let pp_error ppf = function
       Fmt.string ppf "Unexpected first immuable entry"
   | `Not_found -> Fmt.string ppf "Not found"
 
+module Entry = struct
+  type t = { str: string; etag: string; mime: string option }
+
+  let weight { str; _ } = String.length str
+end
+
+module Cache = Lru.M.Make (String) (Entry)
+
 let load pack uid =
-  Log.debug (fun m -> m "load %a" Carton.Uid.pp uid);
   let size = Carton.size_of_uid pack ~uid Carton.Size.zero in
   let blob = Carton.Blob.make ~size in
   Carton.of_uid pack blob ~uid
@@ -66,6 +73,7 @@ type t = {
     tree: Carton.Uid.t Art.t
   ; pack: Mkernel.Block.t Carton.t
   ; mime: string Art.t
+  ; cache: Cache.t
 }
 
 let fill_mime_database pack hash =
@@ -73,7 +81,7 @@ let fill_mime_database pack hash =
   let entries = String.split_on_char '\000' str in
   let mime = Art.make () in
   let rec go = function
-    | [] | [""]-> ()
+    | [] | [ "" ] -> ()
     | filepath :: value :: rest ->
         Log.debug (fun m -> m "MIME of %s: %s" filepath value);
         let key = Art.key ("/" ^ filepath) in
@@ -82,7 +90,7 @@ let fill_mime_database pack hash =
   in
   go entries; mime
 
-let fs ~cfg entries =
+let fs ~cfg ~cache entries =
   let* () = guard (Array.length entries >= 3) invalid_immuable_image in
   let predicate = Cartonnage.Entry.kind entries.(0) = `A in
   let* () = guard predicate unexpected_first_immuable_entry in
@@ -97,14 +105,16 @@ let fs ~cfg entries =
     Art.insert tree key uid
   in
   List.iter fn files;
-  Ok { tree; pack; mime }
+  let cache = Cache.create cache in
+  Ok { tree; pack; mime; cache }
 
-let copy { tree; pack; mime } = { tree; pack= Carton.copy pack; mime }
+let copy { tree; pack; mime; cache } =
+  { tree; pack= Carton.copy pack; mime; cache }
 
-let of_block ~cfg ~digest ~name =
+let of_block ~cfg ~digest ~name ~cache =
   let v blk () =
     let entries = Pate.entries_of_pack ~cfg ~digest blk in
-    match fs ~cfg entries with
+    match fs ~cfg ~cache entries with
     | Ok t -> t
     | Error err ->
         Fmt.failwith "Impossible to load given immuable image: %a" pp_error err
@@ -112,32 +122,52 @@ let of_block ~cfg ~digest ~name =
   Mkernel.map v [ Mkernel.block name ]
 
 let find t filepath =
-  try
-    let key = Art.key filepath in
-    let uid = Art.find t.tree key in
-    Log.debug (fun m -> m "%s -> %a" filepath Carton.Uid.pp uid);
-    let value = load t.pack uid in
-    let bstr = Carton.Value.bigstring value in
-    let mime = Art.find_opt t.mime key in
-    Ok (Bstr.sub bstr ~off:0 ~len:(Carton.Value.length value), mime)
-  with exn ->
-    Log.err (fun m ->
-        m "Got an exception when we tried to find %s: %s" filepath
-          (Printexc.to_string exn));
-    Error `Not_found
+  match Cache.find filepath t.cache with
+  | Some entry ->
+      Cache.promote filepath t.cache;
+      Ok (entry.str, entry.mime)
+  | None -> begin
+      try
+        let key = Art.key filepath in
+        let uid = Art.find t.tree key in
+        let value = load t.pack uid in
+        let bstr = Carton.Value.bigstring value in
+        let str =
+          Bstr.sub_string bstr ~off:0 ~len:(Carton.Value.length value)
+        in
+        let mime = Art.find_opt t.mime key in
+        let etag = Ohex.encode (uid :> string) in
+        Cache.add filepath { str; etag; mime } t.cache;
+        Cache.trim t.cache;
+        Ok (str, mime)
+      with exn ->
+        Log.err (fun m ->
+            m "Got an exception when we tried to find %s: %s" filepath
+              (Printexc.to_string exn));
+        Error `Not_found
+    end
 
 let etag t filepath =
-  try
-    let hash = Art.find t.tree (Art.key filepath) in
-    Ok (Ohex.encode (hash :> string))
-  with _ -> Error `Not_found
+  match Cache.find filepath t.cache with
+  | Some entry ->
+      Cache.promote filepath t.cache;
+      Ok entry.etag
+  | None -> begin
+      try
+        let hash = Art.find t.tree (Art.key filepath) in
+        Ok (Ohex.encode (hash :> string))
+      with _ -> Error `Not_found
+    end
 
 let if_match t req target =
-  let hdrs = Vifu.Request.headers req in
-  let hash = Result.get_ok (etag t target) in
-  match Vifu.Headers.get hdrs "if-none-match" with
-  | Some hash' -> String.equal (hash :> string) (hash' :> string)
-  | None -> false
+  match etag t target with
+  | Error _ -> false
+  | Ok hash -> begin
+      let hdrs = Vifu.Request.headers req in
+      match Vifu.Headers.get hdrs "if-none-match" with
+      | Some hash' -> String.equal hash hash'
+      | None -> false
+    end
 
 let handler ~pool =
   ();
@@ -152,10 +182,10 @@ let handler ~pool =
           Vifu.Response.respond `Not_modified
         in
         Some process
-    | Ok (bstr, mime) ->
+    | Ok (str, mime) ->
         let process =
           let field = "content-length" in
-          let value = string_of_int (Bstr.length bstr) in
+          let value = string_of_int (String.length str) in
           let* () = Vifu.Response.add ~field value in
           let field = "etag" in
           let etag = Result.get_ok (etag t target) in
@@ -165,7 +195,6 @@ let handler ~pool =
             | Some mime -> Vifu.Response.add ~field:"Content-Type" mime
             | None -> Vifu.Response.return ()
           in
-          let str = Bstr.to_string bstr in
           let* () = Vifu.Response.with_string req str in
           Vifu.Response.respond `OK
         in

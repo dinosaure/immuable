@@ -1,14 +1,15 @@
 module RNG = Mirage_crypto_rng.Fortuna
 module Immuable = Immuable
 
+let ( let@ ) finally fn = Fun.protect ~finally fn
+
 let index fs req _server _user's_value =
   let open Vifu.Response.Syntax in
   match Immuable.find fs "/index.html" with
   | Ok _ when Immuable.if_match fs req "/index.html" ->
       let* () = Vifu.Response.with_string req "" in
       Vifu.Response.respond `Not_modified
-  | Ok (bstr, _) ->
-      let str = Bstr.to_string bstr in
+  | Ok (str, _) ->
       let etag = Result.get_ok (Immuable.etag fs "/index.html") in
       let field = "ETag" in
       let* () = Vifu.Response.add ~field (etag :> string) in
@@ -21,32 +22,30 @@ let index fs req _server _user's_value =
       let* () = Vifu.Response.with_string req str in
       Vifu.Response.respond `Not_found
 
-let _1s = 1_000_000_000
-let rec gc () = Gc.compact (); Mkernel.sleep _1s; gc ()
-
 let pool =
   let finally _pool = () in
   Vifu.Device.v ~name:"pool" ~finally [] @@ fun (pool_size, fs) ->
   Cattery.create pool_size @@ fun () -> Immuable.copy fs
 
-let run _ (cfg, digest) cidr gateway port pool_size =
-  let devices =
-    let open Mkernel in
-    [
-      Mnet.stack ~name:"service" ?gateway cidr
-    ; Immuable.of_block ~cfg ~digest ~name:"immuable"
-    ]
+let rng () = Mirage_crypto_rng_mkernel.initialize (module RNG)
+
+let run _ (cfg, digest) cidr gateway port pool_size cache =
+  let rng = Mkernel.map rng Mkernel.[]
+  and stack = Mnet.stack ~name:"service" ?gateway cidr
+  and fs = Immuable.of_block ~cfg ~digest ~name:"immuable" ~cache in
+  Mkernel.run [ rng; stack; fs ] @@ fun rng (daemon, tcp, _) fs () ->
+  let@ () = fun () -> Mirage_crypto_rng_mkernel.kill rng in
+  let@ () = fun () -> Mnet.kill daemon in
+  let h1 =
+    H1.Config.
+      {
+        default with
+        read_buffer_size= 0x4000
+      ; response_buffer_size= 0x4000
+      ; response_body_buffer_size= 0x4000
+      }
   in
-  Mkernel.run devices @@ fun (daemon, tcpv4, _udpv4) fs () ->
-  let rng = Mirage_crypto_rng_mkernel.initialize (module RNG) in
-  let gc = Miou.async gc in
-  let finally () =
-    Mirage_crypto_rng_mkernel.kill rng;
-    Mnet.kill daemon;
-    Miou.cancel gc
-  in
-  Fun.protect ~finally @@ fun () ->
-  let cfg = Vifu.Config.v port in
+  let cfg = Vifu.Config.v ~http:(`H1 h1) port in
   let handlers = [ Immuable.handler ~pool ] in
   let devices = Vifu.Devices.[ pool ] in
   let routes =
@@ -54,7 +53,7 @@ let run _ (cfg, digest) cidr gateway port pool_size =
     let open Vifu.Uri in
     [ get (rel /?? any) --> index fs ]
   in
-  Vifu.run ~cfg ~handlers ~devices tcpv4 routes (pool_size, fs)
+  Vifu.run ~cfg ~handlers ~devices tcp routes (pool_size, fs)
 
 open Cmdliner
 
@@ -238,7 +237,12 @@ let setup_carton_config =
 let pool_size =
   let doc = "How many elements our internal pool can keep." in
   let open Arg in
-  value & opt int 4 & info [ "pool-size" ] ~doc ~docv:"NUMBER"
+  value & opt int 64 & info [ "pool-size" ] ~doc ~docv:"NUMBER"
+
+let cache_size =
+  let doc = "Maximum size (in bytes) of the LRU cache." in
+  let open Arg in
+  value & opt int (4 * 1024 * 1024) & info [ "cache-size" ] ~doc ~docv:"BYTES"
 
 let term =
   let open Term in
@@ -249,6 +253,7 @@ let term =
   $ ipv4_gateway
   $ port
   $ pool_size
+  $ cache_size
 
 let cmd =
   let info = Cmd.info "immuable" in

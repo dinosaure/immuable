@@ -9,11 +9,12 @@ type error =
 
 val fs :
      cfg:Pate.config
+  -> cache:int
   -> (Mkernel.Block.t Carton.t * 'a) Cartonnage.Entry.t array
   -> (t, [> error ]) result
 
 val copy : t -> t
-val find : t -> string -> (Bstr.t * string option, [> error ]) result
+val find : t -> string -> (string * string option, [> error ]) result
 val etag : t -> string -> (string, [> error ]) result
 val if_match : t -> ('c, 'v) Vifu.Request.t -> string -> bool
 
@@ -21,6 +22,7 @@ val of_block :
      cfg:Pate.config
   -> digest:Carton.First_pass.digest
   -> name:string
+  -> cache:int
   -> t Mkernel.arg
 
 val handler :
