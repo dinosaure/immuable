@@ -5,7 +5,8 @@ type error =
   | `Invalid_immuable_commit
   | `Invalid_tree
   | `Unexpected_first_immuable_entry
-  | `Not_found ]
+  | `Not_found
+  | `Msg of string ]
 
 val fs :
      cfg:Pate.config

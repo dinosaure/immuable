@@ -7,6 +7,7 @@ let guard predicate fn = if predicate then Ok () else Error (fn ())
 let invalid_immuable_image () = `Invalid_immuable_image
 let invalid_immuable_commit () = `Invalid_immuable_commit
 let unexpected_first_immuable_entry () = `Unexpected_first_immuable_entry
+let open_error_msg = function Ok _ as v -> v | Error (`Msg _) as err -> err
 
 module Tree = Immuable_tree
 
@@ -15,7 +16,8 @@ type error =
   | `Invalid_immuable_commit
   | `Invalid_tree
   | `Unexpected_first_immuable_entry
-  | `Not_found ]
+  | `Not_found
+  | `Msg of string ]
 
 let pp_error ppf = function
   | `Invalid_immuable_image -> Fmt.string ppf "Invalid immuable image"
@@ -24,6 +26,7 @@ let pp_error ppf = function
   | `Unexpected_first_immuable_entry ->
       Fmt.string ppf "Unexpected first immuable entry"
   | `Not_found -> Fmt.string ppf "Not found"
+  | `Msg msg -> Fmt.string ppf msg
 
 module Entry = struct
   type t = { str: string; etag: string; mime: string option }
@@ -49,28 +52,30 @@ let get_root_and_metadata ~cfg pack commit =
   let metadata = Carton.Uid.unsafe_of_string metadata in
   Ok (root, metadata)
 
-let rec walk ~cfg pack entries (current, node) =
+let rec walk ~cfg pack dirs entries (current, node) =
   let str = Carton.Value.string (load pack node) in
   let ref_length = cfg.Pate.ref_length in
   let* tree = Tree.of_string ~ref_length str in
   let go acc elt =
     match (acc, elt) with
     | (Error _ as err), _ -> err
-    | Ok entries, { Tree.perm= `Dir; name; node } ->
+    | Ok (dirs, entries), { Tree.perm= `Dir; name; node } ->
         let current = Fpath.add_seg current name in
         let current = Fpath.to_dir_path current in
-        walk ~cfg pack entries (current, node)
-    | Ok entries, { name; node; _ } ->
+        let dirs = Fpath.Set.add current dirs in
+        walk ~cfg pack dirs entries (current, node)
+    | Ok (dirs, entries), { name; node; _ } ->
         let current = Fpath.add_seg current name in
         Log.debug (fun m -> m "[+] %a" Fpath.pp current);
-        Ok ((current, node) :: entries)
+        Ok (dirs, (current, node) :: entries)
   in
-  List.fold_left go (Ok entries) tree
+  List.fold_left go (Ok (dirs, entries)) tree
 
-let walk ~cfg pack root = walk ~cfg pack [] (Fpath.v "/", root)
+let walk ~cfg pack root = walk ~cfg pack Fpath.Set.empty [] (Fpath.v "/", root)
 
 type t = {
     tree: Carton.Uid.t Art.t
+  ; dirs: Fpath.Set.t
   ; pack: Mkernel.Block.t Carton.t
   ; mime: string Art.t
   ; cache: Cache.t
@@ -98,7 +103,7 @@ let fs ~cfg ~cache entries =
   let pack, _ = Cartonnage.Entry.meta commit in
   let* root, metadata = get_root_and_metadata ~cfg pack commit in
   let mime = fill_mime_database pack metadata in
-  let* files = walk ~cfg pack root in
+  let* dirs, files = walk ~cfg pack root in
   let tree = Art.make () in
   let fn (path, uid) =
     let key = Art.key (Fpath.to_string path) in
@@ -106,10 +111,10 @@ let fs ~cfg ~cache entries =
   in
   List.iter fn files;
   let cache = Cache.create cache in
-  Ok { tree; pack; mime; cache }
+  Ok { tree; dirs; pack; mime; cache }
 
-let copy { tree; pack; mime; cache } =
-  { tree; pack= Carton.copy pack; mime; cache }
+let copy { tree; dirs; pack; mime; cache } =
+  { tree; dirs; pack= Carton.copy pack; mime; cache }
 
 let of_block ~cfg ~digest ~name ~cache =
   let v blk () =
@@ -121,7 +126,14 @@ let of_block ~cfg ~digest ~name ~cache =
   in
   Mkernel.map v [ Mkernel.block name ]
 
-let find t filepath =
+let find t path =
+  let* path = Fpath.of_string path |> open_error_msg in
+  let path =
+    if Fpath.is_dir_path path
+    || Fpath.Set.mem (Fpath.to_dir_path path) t.dirs
+    then Fpath.(path / "index.html")
+    else path in
+  let filepath = Fpath.to_string path in
   match Cache.find filepath t.cache with
   | Some entry ->
       Cache.promote filepath t.cache;
@@ -132,9 +144,8 @@ let find t filepath =
         let uid = Art.find t.tree key in
         let value = load t.pack uid in
         let bstr = Carton.Value.bigstring value in
-        let str =
-          Bstr.sub_string bstr ~off:0 ~len:(Carton.Value.length value)
-        in
+        let len = Carton.Value.length value in
+        let str = Bstr.sub_string bstr ~off:0 ~len in
         let mime = Art.find_opt t.mime key in
         let etag = Ohex.encode (uid :> string) in
         Cache.add filepath { str; etag; mime } t.cache;
@@ -147,7 +158,14 @@ let find t filepath =
         Error `Not_found
     end
 
-let etag t filepath =
+let etag t path =
+  let* path = Fpath.of_string path |> open_error_msg in
+  let path =
+    if Fpath.is_dir_path path
+    || Fpath.Set.mem (Fpath.to_dir_path path) t.dirs
+    then Fpath.(path / "index.html")
+    else path in
+  let filepath = Fpath.to_string path in
   match Cache.find filepath t.cache with
   | Some entry ->
       Cache.promote filepath t.cache;
