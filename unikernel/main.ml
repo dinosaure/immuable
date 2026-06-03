@@ -29,6 +29,22 @@ let pool =
 
 let rng () = Mirage_crypto_rng_mkernel.initialize (module RNG)
 
+let not_found =
+  (* NOTE(dinosaure): webbrowser does not put into the cache the 404.html. *)
+  let fn acc str = acc + String.length str in
+  let length = Array.fold_left fn 0 Documents._404 in
+  fun req _target _server _ ->
+  let open Vifu.Response.Syntax in
+  let process =
+      let field = "content-length" in
+      let* () = Vifu.Response.add ~field (string_of_int length) in
+      let field = "content-type" in
+      let* () = Vifu.Response.add ~field "text/html; charset=utf-8" in
+      let src = Flux.Source.array Documents._404 in
+      let* () = Vifu.Response.with_source ~compression:`DEFLATE req src in
+      Vifu.Response.respond `Not_found in
+  Some process
+
 let run _ (cfg, digest) cidr gateway port pool_size cache =
   let rng = Mkernel.map rng Mkernel.[]
   and stack = Mnet.stack ~name:"service" ?gateway cidr
@@ -46,7 +62,7 @@ let run _ (cfg, digest) cidr gateway port pool_size cache =
       }
   in
   let cfg = Vifu.Config.v ~http:(`H1 h1) port in
-  let handlers = [ Immuable.handler ~pool ] in
+  let handlers = [ Immuable.handler ~pool; not_found ] in
   let devices = Vifu.Devices.[ pool ] in
   let routes =
     let open Vifu.Route in

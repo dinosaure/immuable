@@ -2,7 +2,7 @@
  (enabled_if
   (= %{context_name} "solo5"))
  (name main)
- (modules main pate immuable)
+ (modules main pate immuable documents)
  (link_flags :standard -cclib "-z solo5-abi=hvt")
  (libraries
   mkernel
@@ -37,3 +37,11 @@
   (= %{context_name} "solo5"))
  (action
   (run solo5-elftool gen-manifest manifest.json manifest.c)))
+
+(rule
+ (targets documents.ml)
+ (deps 404.html)
+ (action
+   (with-stdout-to
+    documents.ml
+    (run mcrunch --file _404:404.html))))
