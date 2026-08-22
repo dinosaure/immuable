@@ -1,7 +1,11 @@
 vendors:
-	test ! -d $@
-	mkdir vendors
-	@./source.sh
+	@echo " INFER"
+	unic infer -r . -x _build -x vendors -x bin \
+		--ignore Documents \
+		--prefer digestif.c --prefer checkseum.c \
+		-o _mfetch
+	@echo " FETCH"
+	mfetch -q
 
 immuable.hvt.target: | vendors
 	@echo " BUILD unikernel/main.exe"
