@@ -8,13 +8,16 @@ license: "MIT"
 
 depends: [
   "ocaml" {>= "5.3.0"}
-  "dune" {>= "3.0.0"}
+# As we don't install `dune-package` file
+  "dune" {>= "3.0.0" & build}
   "vif"
   "mirage-crypto-rng-mkernel"
   "vifu"
   "progress"
   "flux"
-  "carton"
+  "carton" {>= "1.3.0"}
+  "unic" {build}
+  "mfetch" {build}
   "art"
   "encore"
   "cattery"
@@ -26,4 +29,7 @@ build: [
 synopsis: "An unikernel which serve HTTP contents"
 pin-depends: [
   [ "zarith.dev" "git+https://github.com/mirage/Zarith.git#df8969d9bb95cffca13e31a615189ab27ada0684" ]
+  [ "unic.dev" "git+https://git.robur.coop/robur/unic.git#d487ef4e83d99223b56c9abae8f9a17ae50d7473" ]
+  [ "uniq.dev" "git+https://git.robur.coop/robur/unic.git#d487ef4e83d99223b56c9abae8f9a17ae50d7473" ]
+  [ "mfetch.dev" "git+https://git.robur.coop/robur/mfetch.git#33204acd6cc597530d1cff7785503a7de6a0c799" ]
 ]
