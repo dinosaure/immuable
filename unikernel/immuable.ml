@@ -193,6 +193,7 @@ let handler ~pool =
     let open Vifu.Response.Syntax in
     let pool = Vifu.Server.device pool server in
     Cattery.use pool @@ fun t ->
+    let target = String.split_on_char '?' target |> List.hd in
     match find t target with
     | Ok _ when if_match t req target ->
         let process =
