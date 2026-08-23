@@ -150,18 +150,18 @@ let compile ?(on = ignorem) ~identify ~digest_length seq =
   in
   let new_child ~parent child =
     match parent with
-    | `Ofs parent -> begin
-        match Hashtbl.find_opt children_by_offset parent with
+    | `Ofs parent ->
+        begin match Hashtbl.find_opt children_by_offset parent with
         | None -> Hashtbl.add children_by_offset parent [ child ]
         | Some offsets ->
             Hashtbl.replace children_by_offset parent (child :: offsets)
-      end
-    | `Ref parent -> begin
-        match Hashtbl.find_opt children_by_uid parent with
+        end
+    | `Ref parent ->
+        begin match Hashtbl.find_opt children_by_uid parent with
         | None -> Hashtbl.add children_by_uid parent [ child ]
         | Some offsets ->
             Hashtbl.replace children_by_uid parent (child :: offsets)
-      end
+        end
   in
   let number_of_objects = ref 0 in
   let (Carton.Identify i) = identify in
@@ -278,12 +278,12 @@ let compile ?(on = ignorem) ~identify ~digest_length seq =
 type delta = { source: Carton.Uid.t; depth: int; raw: Cachet.Bstr.t }
 
 let seq_of_blk blk =
-  let pagesize = Mkernel.Block.pagesize blk in
-  let buf = Bstr.create pagesize in
+  let sector_size = Mkernel.Block.sector_size blk in
+  let buf = Bstr.create sector_size in
   let src_off = ref 0 in
   let rec go () =
     Mkernel.Block.read blk ~src_off:!src_off buf;
-    src_off := !src_off + pagesize;
+    src_off := !src_off + sector_size;
     Seq.Cons (Bstr.to_string buf, go)
   in
   go
@@ -297,14 +297,14 @@ let entries_of_pack ~cfg ~digest blk =
       Mkernel.Block.read blk ~src_off:pos bstr;
       bstr
     in
-    let pagesize = Mkernel.Block.pagesize blk in
+    let sector_size = Mkernel.Block.sector_size blk in
     let z = Bstr.create De.io_buffer_size in
     let allocate _ = De.make_window ~bits:15 in
     let index uid =
       Fmt.failwith "Impossible to find the object %a" Carton.Uid.pp uid
     in
-    Carton.make ~pagesize ?cachesize:cfg.cachesize ~map blk ~z ~allocate
-      ~ref_length:cfg.ref_length index
+    Carton.make ~pagesize:sector_size ?cachesize:cfg.cachesize ~map blk ~z
+      ~allocate ~ref_length:cfg.ref_length index
   in
   let on ~max:_ entry =
     let cursor = entry.offset and consumed = entry.consumed in

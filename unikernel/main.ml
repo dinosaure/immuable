@@ -1,8 +1,6 @@
 module RNG = Mirage_crypto_rng.Fortuna
 module Immuable = Immuable
 
-let ( let@ ) finally fn = Fun.protect ~finally fn
-
 let index fs req _server _user's_value =
   let open Vifu.Response.Syntax in
   match Immuable.find fs "/index.html" with
@@ -34,24 +32,25 @@ let not_found =
   let fn acc str = acc + String.length str in
   let length = Array.fold_left fn 0 Documents._404 in
   fun req _target _server _ ->
-  let open Vifu.Response.Syntax in
-  let process =
+    let open Vifu.Response.Syntax in
+    let process =
       let field = "content-length" in
       let* () = Vifu.Response.add ~field (string_of_int length) in
       let field = "content-type" in
       let* () = Vifu.Response.add ~field "text/html; charset=utf-8" in
       let src = Flux.Source.array Documents._404 in
       let* () = Vifu.Response.with_source ~compression:`DEFLATE req src in
-      Vifu.Response.respond `Not_found in
-  Some process
+      Vifu.Response.respond `Not_found
+    in
+    Some process
 
 let run _ (cfg, digest) cidr gateway port pool_size cache =
-  let rng = Mkernel.map rng Mkernel.[]
+  let rng =
+    let open Mkernel in
+    map rng [] |> finally Mirage_crypto_rng_mkernel.kill
   and stack = Mnet.stack ~name:"service" ?gateway cidr
   and fs = Immuable.of_block ~cfg ~digest ~name:"immuable" ~cache in
-  Mkernel.run [ rng; stack; fs ] @@ fun rng (daemon, tcp, _) fs () ->
-  let@ () = fun () -> Mirage_crypto_rng_mkernel.kill rng in
-  let@ () = fun () -> Mnet.kill daemon in
+  Mkernel.run [ rng; stack; fs ] @@ fun _ (_, tcp, _) fs () ->
   let h1 =
     H1.Config.
       {

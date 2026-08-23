@@ -129,17 +129,17 @@ let of_block ~cfg ~digest ~name ~cache =
 let find t path =
   let* path = Fpath.of_string path |> open_error_msg in
   let path =
-    if Fpath.is_dir_path path
-    || Fpath.Set.mem (Fpath.to_dir_path path) t.dirs
+    if Fpath.is_dir_path path || Fpath.Set.mem (Fpath.to_dir_path path) t.dirs
     then Fpath.(path / "index.html")
-    else path in
+    else path
+  in
   let filepath = Fpath.to_string path in
   match Cache.find filepath t.cache with
   | Some entry ->
       Cache.promote filepath t.cache;
       Ok (entry.str, entry.mime)
-  | None -> begin
-      try
+  | None ->
+      begin try
         let key = Art.key filepath in
         let uid = Art.find t.tree key in
         let value = load t.pack uid in
@@ -156,26 +156,26 @@ let find t path =
             m "Got an exception when we tried to find %s: %s" filepath
               (Printexc.to_string exn));
         Error `Not_found
-    end
+      end
 
 let etag t path =
   let* path = Fpath.of_string path |> open_error_msg in
   let path =
-    if Fpath.is_dir_path path
-    || Fpath.Set.mem (Fpath.to_dir_path path) t.dirs
+    if Fpath.is_dir_path path || Fpath.Set.mem (Fpath.to_dir_path path) t.dirs
     then Fpath.(path / "index.html")
-    else path in
+    else path
+  in
   let filepath = Fpath.to_string path in
   match Cache.find filepath t.cache with
   | Some entry ->
       Cache.promote filepath t.cache;
       Ok entry.etag
-  | None -> begin
-      try
+  | None ->
+      begin try
         let hash = Art.find t.tree (Art.key filepath) in
         Ok (Ohex.encode (hash :> string))
       with _ -> Error `Not_found
-    end
+      end
 
 let if_match t req target =
   match etag t target with
