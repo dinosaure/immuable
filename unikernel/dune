@@ -42,6 +42,6 @@
  (targets documents.ml)
  (deps 404.html)
  (action
-   (with-stdout-to
-    documents.ml
-    (run mcrunch --file _404:404.html))))
+  (with-stdout-to
+   documents.ml
+   (run mcrunch --file _404:404.html))))
