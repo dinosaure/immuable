@@ -1,9 +1,11 @@
-vendors:
+_mfetch:
 	@echo " INFER"
 	unic infer -r . -x _build -x vendors -x bin \
 		--ignore Documents \
 		--prefer digestif.c --prefer checkseum.c \
 		-o _mfetch
+
+vendors: _mfetch
 	@echo " FETCH"
 	mfetch -q
 
