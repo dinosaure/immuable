@@ -29,6 +29,9 @@ build: [
 synopsis: "An unikernel which serve HTTP contents"
 pin-depends: [
   [ "zarith.dev" "git+https://github.com/mirage/Zarith.git#df8969d9bb95cffca13e31a615189ab27ada0684" ]
+  [ "mnet.dev" "git+https://github.com/robur-coop/mnet.git#3434bf252a7ed9fc713bd470699195dc237bdea7" ]
+  [ "mnet.dev" "git+https://github.com/robur-coop/mnet.git#3434bf252a7ed9fc713bd470699195dc237bdea7" ]
+  [ "mnet-tls.dev" "git+https://github.com/robur-coop/mnet.git#3434bf252a7ed9fc713bd470699195dc237bdea7" ]
 ]
 x-mkernel-pre-build: [
   ["mfetch" "fetch" "--with-dune-file" "--file=_mfetch"]
