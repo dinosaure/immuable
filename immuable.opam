@@ -13,6 +13,7 @@ depends: [
   "vif"
   "mirage-crypto-rng-mkernel"
   "vifu"
+  "gmp"
   "progress"
   "flux"
   "carton" {>= "1.3.0"}
